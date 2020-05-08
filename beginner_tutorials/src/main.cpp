@@ -69,6 +69,10 @@ class ROSinterface{
 				slam_handle.do_SLAM();
 				//Declares the message to be sent
 				geometry_msgs::Twist msg = planner_handle.do_planning();
+				if(planner_handle.is_finished())
+				{
+					return true;	
+				}
 				if(debug_tag){
 					//Random x value between -2 and 2
 					msg.linear.x=4*double(rand())/double(RAND_MAX)-2;
