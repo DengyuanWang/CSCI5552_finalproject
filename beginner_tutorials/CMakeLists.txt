@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   nav_msgs
+  sensor_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -52,6 +53,7 @@ find_package(catkin REQUIRED COMPONENTS
  add_message_files(
    FILES
    landmarkdistance.msg
+   integrated_msg.msg
 #   Message2.msg
 )
 
@@ -72,7 +74,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
-#   std_msgs
+	std_msgs sensor_msgs nav_msgs
  )
 
 ################################################
@@ -109,7 +111,7 @@ catkin_package(
 #  LIBRARIES beginner_tutorials
    CATKIN_DEPENDS
 	message_runtime	
-	roscpp rospy std_msgs nav_msgs
+	roscpp rospy std_msgs nav_msgs sensor_msgs 
 #  DEPENDS system_lib
 
 )
