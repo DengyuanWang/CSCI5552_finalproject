@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   nav_msgs
   sensor_msgs
+  visualization_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -74,7 +75,7 @@ find_package(Eigen3 REQUIRED)
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
-	std_msgs sensor_msgs nav_msgs
+	std_msgs sensor_msgs nav_msgs visualization_msgs
  )
 
 ################################################
@@ -111,7 +112,7 @@ catkin_package(
 #  LIBRARIES beginner_tutorials
    CATKIN_DEPENDS
 	message_runtime	
-	roscpp rospy std_msgs nav_msgs sensor_msgs 
+	roscpp rospy std_msgs nav_msgs sensor_msgs visualization_msgs
    DEPENDS 
 	EIGEN3 
 

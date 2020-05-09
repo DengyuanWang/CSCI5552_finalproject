@@ -1,11 +1,13 @@
 #include <vector>
 #include <string>
 #include <Eigen/Core>
-
+#include <queue>
 #include "ros/ros.h"
+#include <tf/transform_broadcaster.h>
 #include "nav_msgs/Odometry.h"
 #include "geometry_msgs/Twist.h"
 #include "sensor_msgs/LaserScan.h"
+#include <visualization_msgs/Marker.h>
 #include "SLAM.h"
 #include "Planner.h"
 
@@ -21,8 +23,11 @@ class ROSinterface{
 	Planner planner_handle;
 	beginner_tutorials::integrated_msg integrated_msg;
 	geometry_msgs::Twist cmd_msg;
-	
-	 void OdomCallback(const nav_msgs::Odometry::ConstPtr& msg){
+	queue<visualization_msgs::Marker> Markers;
+	ros::Publisher marker_pub;
+	int cur_marker_id;
+
+	void OdomCallback(const nav_msgs::Odometry::ConstPtr& msg){
 	// subscribe to the content in topic /Odom
 		if(integrated_msg.tag==0){
 			integrated_msg.tag=1;
@@ -32,17 +37,19 @@ class ROSinterface{
 			integrated_msg.time_stamp = msg->header.stamp;
 			if(integrated_msg.delta_t>0){
 				integrated_msg.odom = *msg;
+				gen_marker(msg->pose.pose.position.x,msg->pose.pose.position.y);
 			}
 			
 		}
 	} 
-	 void LaserScanCallback(const sensor_msgs::LaserScan::ConstPtr& msg){
+	void LaserScanCallback(const sensor_msgs::LaserScan::ConstPtr& msg){
 		// subscribe to the content in topic /scan
 		if(integrated_msg.tag==2 && integrated_msg.delta_t>0){
 			integrated_msg.layserScan = *msg;
 		}
 	} 
 	public: bool init_start_ros(bool debug_tag){
+		cur_marker_id = 0;
 		integrated_msg.tag = 0;
 		integrated_msg.delta_t=-1;
 		//Sets up the random number generator
@@ -52,11 +59,69 @@ class ROSinterface{
 		//10 is the queue size
 		sub_odom = node_handle.subscribe("odom", 10 , &ROSinterface::OdomCallback,this);
 		sub_laserscan = node_handle.subscribe("scan", 10 , &ROSinterface::LaserScanCallback,this);
-
+		//visualization for debug
+		marker_pub = node_handle.advertise<visualization_msgs::Marker>("visualization_marker", 1);
 		return start_ros_loop(debug_tag);
 
 	}
+	
+	bool gen_marker(float x_axis,float y_axis){
+		uint32_t shape = visualization_msgs::Marker::CUBE;
+		visualization_msgs::Marker marker;
+		// Set the frame ID and timestamp.  See the TF tutorials for information on these.
+		marker.header.frame_id = "/map";
+		marker.header.stamp = ros::Time::now();
+		// Set the namespace and id for this marker.  This serves to create a unique ID
+		// Any marker sent with the same namespace and id will overwrite the old one
+		marker.ns = "basic_shapes";
+		marker.id = cur_marker_id;
+		cur_marker_id +=1;
+		// Set the marker type.  
+		//Initially this is CUBE, and cycles between that and SPHERE, ARROW, and CYLINDER
+		marker.type = shape;
 
+		// Set the marker action.  
+		//Options are ADD, DELETE, and new in ROS Indigo: 3 (DELETEALL)
+		marker.action = visualization_msgs::Marker::ADD;
+
+		// Set the pose of the marker.  
+		//This is a full 6DOF pose relative to the frame/time specified in the header
+		marker.pose.position.x = x_axis;
+		marker.pose.position.y = y_axis;
+		marker.pose.position.z = 0;
+		marker.pose.orientation.x = 1.0;
+		marker.pose.orientation.y = 1.0;
+		marker.pose.orientation.z = 0.0;
+		marker.pose.orientation.w = 1.0;
+
+		// Set the scale of the marker -- 1x1x1 here means 1m on a side
+		marker.scale.x = 0.1;
+		marker.scale.y = 0.1;
+		marker.scale.z = 0.1;
+
+		// Set the color -- be sure to set alpha to something non-zero!
+		marker.color.r = 0.0f;
+		marker.color.g = 1.0f;
+		marker.color.b = 0.0f;
+		marker.color.a = 1.0;
+
+		marker.lifetime = ros::Duration();
+		Markers.push(marker);
+		return true;
+	}
+	
+	bool show_marker(){
+		if (marker_pub.getNumSubscribers() < 1){
+			ROS_WARN_ONCE("Please create a subscriber to the marker");
+			return false;
+		}else{
+			 while (!Markers.empty()) { 
+				marker_pub.publish(Markers.front());
+				Markers.pop(); 
+			    } 
+			return true;
+		}		
+	}
 	bool start_ros_loop(bool debug_tag){
 		//Sets the loop to publish at a rate of 10Hz
 	     	ros::Rate rate(100);
@@ -79,12 +144,14 @@ class ROSinterface{
 					msg.linear.x=4*double(rand())/double(RAND_MAX)-2;
 					//Random y value between -3 and 3
 					msg.angular.z=6*double(rand())/double(RAND_MAX)-3;
+					msg.linear.x = 1;
+					msg.linear.z = 0;
 					//Publish the message
 				}
 				else{
 				
 				}
-
+				show_marker();
 				pub_cmd.publish(msg);
 			}
 			
