@@ -1,5 +1,6 @@
 #include <vector>
 #include <string>
+#include <Eigen/Core>
 
 #include "ros/ros.h"
 #include "nav_msgs/Odometry.h"
