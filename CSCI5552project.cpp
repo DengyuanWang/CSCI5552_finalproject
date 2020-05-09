@@ -4,11 +4,17 @@
 #include <stdlib.h> 
 #include<time.h>
 #include <Eigen/Dense>
+#include <math.h>
+
+#include "ros/ros.h"
+#include "beginner_tutorials/integrated_msg.h"
+#include "sensor_msgs/LaserScan.h"
+#include "nav_msgs/Odometry.h"
 
 
 
 void EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::VectorXd u, Eigen::MatrixXd Sigma_n, double dt,
-    Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {
+    Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {       // u : velocity and angular velocity, Sigma_n: user-defined
     // TODO
     //std::cout << "EKFSLAMPropagate start" << std::endl;
 
@@ -55,11 +61,37 @@ void EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen:
 
 }
 
-void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std::vector<Eigen::VectorXd> zs, std::vector<Eigen::MatrixXd> Sigma_ms,
-    Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt, Eigen::MatrixXd LaserRB) {
+void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std::vector<Eigen::MatrixXd> Sigma_ms,
+    Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {  // Eigen::MatrixXd LaserRB , Sigma_ms MatrixXd Sigma_ms(2,2)
+    // Pass in LaserScan measurement date
     // TODO
     // Laserscan measurements: distance + bearing in robot frame(LaserRB) >> x,y coordinates in robot frame(LaserXY)
-    // 
+    //val =  [----]
+    //#include<math.h>
+    // if isnan(val){
+    //}
+    //len = length(in.....range)
+    //integrated_msg.laserscan.range[i] = nan/  0.011
+    //ag = integrated_msg.laserscan.angle_min
+    //ag += integrated_msg.laserscan.angle_increment
+    int len = length(integrated_msg.laserscan.range);
+    double Bearing = integrated_msg.laserscan.angle_min;
+    double Del_B = integrated_msg.laserscan.angle_increment;
+    Eigen::MatrixXd LaserRB;
+    int countValid = 0;
+    for (int i_l = 0; i_l < len; i_l++) {
+        if isnan(integrated_msg.laserscan.range[i_l]) {
+            // do nothing
+        }
+        else {
+            LaserRB[countValid][0] = integrated_msg.laserscan.range[i_l];
+            LaserRB[countValid][1] = Bearing;
+            countValid = countValid + 1;
+        }
+        Bearing = Bearing + Del_B;
+     }
+
+
     int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
     Eigen::MatrixXd LaserXY;
     for (int i = 0; i < num_meas; i++) {
@@ -218,29 +250,29 @@ void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std
         for (int i3 = 1; i3 <= measurementNumber; i3++) {
             //std::cout << "Start check for measurement "<< i <<" in x_hat_t, total measurement is "<<measurementNumber<< std::endl;
             
-
+            double Lxi = x_hat_t[3 + 2 * (i3 - 1)];
+            double Lyi = x_hat_t[4 + 2 * (i3 - 1)];
+            double r_hat = sqrt((Lxi - R_x)^2 + (Lyi - R_y)^2);
             Eigen::VectorXd r_i;   // innovation 2 X 1
             Eigen::MatrixXd HR(2, 3);
-            HR << -std::cos(x_hat_t[2]), -std::sin(x_hat_t[2]), -std::sin(x_hat_t[2]) * (x_hat_t[2 * i + 1] - x_hat_t[0])
-                + std::cos(x_hat_t[2]) * (x_hat_t[2 * i + 2] - x_hat_t[1]),
-                std::sin(x_hat_t[2]), -std::cos(x_hat_t[2]), -std::cos(x_hat_t[2]) * (x_hat_t[2 * i + 1] - x_hat_t[0])
-                - std::sin(x_hat_t[2]) * (x_hat_t[2 * i + 2] - x_hat_t[1]);
+            HR << (R_x - Lxi) / r_hat, (R_y - Lyi) / r_hat, 0,
+                (Lyi - R_y) / (r_hat) ^ 2, (Lxi - R_x) / (r_hat) ^ 2, -1;
             Eigen::MatrixXd HLi(2, 2);
-            HLi << std::cos(x_hat_t[2]), std::sin(x_hat_t[2]),
-                -std::sin(x_hat_t[2]), std::cos(x_hat_t[2]);
+            HLi << -(R_x - Lxi) / r_hat, -(R_y - Lyi) / r_hat,
+                -(Lyi - R_y) / (r_hat) ^ 2, -(Lxi - R_x) / (r_hat) ^ 2;
 
             Eigen::MatrixXd H;
             H = Eigen::MatrixXd::Zero(2, 3 + 2 * measurementNumber);
             H.block<2, 3>(0, 0) = HR;
-            H.block<2, 2>(0, 2 * i + 1) = HLi;
+            H.block<2, 2>(0, 2 * i3 + 1) = HLi;
 
             //std::cout << "Calculate H finished:\n" << H.size() << std::endl;
             Eigen::MatrixXd S;
-            S = H * Sigma_x_t * H.transpose() + Sigma_ms[measure_count];
+            S = H * Sigma_x_t * H.transpose() + Sigma_ms;  // S = H * Sigma_x_t * H.transpose() + Sigma_ms[measure_count]
             //std::cout << "Calculate S finished:\n" << S.size() << std::endl;
-            Eigen::VectorXd h_xLi0(2);
-            h_xLi0[0] = std::cos(x_hat_t[2]) * (x_hat_t[2 * i + 1] - x_hat_t[0]) + std::sin(x_hat_t[2]) * (x_hat_t[2 * i + 2] - x_hat_t[1]);
-            h_xLi0[1] = -std::sin(x_hat_t[2]) * (x_hat_t[2 * i + 1] - x_hat_t[0]) + std::cos(x_hat_t[2]) * (x_hat_t[2 * i + 2] - x_hat_t[1]);
+            Eigen::VectorXd h_xLi0(2); // estimated measurement
+            h_xLi0[0] = sqrt((Lxi - R_x) ^ 2 + (Lyi - R_y) ^ 2);
+            h_xLi0[1] = std::atan2(Lyi - R_y, Lxi - R_x) - R_the;
 
             r_i = z - h_xLi0; // innovation
 
@@ -248,7 +280,7 @@ void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std
             double d = dv[0];
             //std::cout << "Current d is :\n" << d << std::endl;
             if (d_id.second == -1 || d_id.first > d) {
-                d_id = std::make_pair(d, i);
+                d_id = std::make_pair(d, i3);
 
                 H_best = H;
                 S_best = S;
@@ -262,29 +294,36 @@ void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std
         if (d_id.second == -1 || d_id.first > Mahalanobis_distance_Upthreshold) {
             //meet a new landmark
             //std::cout << "Start inserting new landmark measure_count="<<measure_count << std::endl;
+            // L_x,L_y are new landmark coordinates;
+            
+            
+            
+
+            double r_hat = sqrt((L_x - R_x) ^ 2 + (L_y - R_y) ^ 2);
+            Eigen::MatrixXd HR(2, 3);
+            HR << (R_x - L_x) / r_hat, (R_y - L_y) / r_hat, 0,
+                (L_y - R_y) / (r_hat) ^ 2, (L_x - R_x) / (r_hat) ^ 2, -1;
             Eigen::MatrixXd HLi(2, 2);
-            HLi << std::cos(x_hat_t[2]), std::sin(x_hat_t[2]),
-                -std::sin(x_hat_t[2]), std::cos(x_hat_t[2]);
+            HLi << -(R_x - L_x) / r_hat, -(R_y - L_y) / r_hat,
+                -(L_y - R_y) / (r_hat) ^ 2, -(L_x - R_x) / (r_hat) ^ 2;
 
-            Eigen::VectorXd h_xLi0(2);
-            h_xLi0[0] = std::cos(x_hat_t[2]) * (0 - x_hat_t[0]) + std::sin(x_hat_t[2]) * (0 - x_hat_t[1]);
-            h_xLi0[1] = -std::sin(x_hat_t[2]) * (0 - x_hat_t[0]) + std::cos(x_hat_t[2]) * (0 - x_hat_t[1]);
+            //Eigen::VectorXd h_xLi0(2);
+            //h_xLi0[0] = std::cos(x_hat_t[2]) * (0 - x_hat_t[0]) + std::sin(x_hat_t[2]) * (0 - x_hat_t[1]);
+            //h_xLi0[1] = -std::sin(x_hat_t[2]) * (0 - x_hat_t[0]) + std::cos(x_hat_t[2]) * (0 - x_hat_t[1]);
 
 
-
-            Eigen::VectorXd new_val;
-            new_val = HLi.inverse().eval() * (z - h_xLi0);
+            // update state
+            Eigen::VectorXd new_val(2,1);
+            new_val << L_x,
+                L_y;
             //update
             //std::cout<<"Update x_hat_t new_val is"<<new_val<<std::endl;
 
             Eigen::VectorXd new_x_hat_t(x_hat_t.size() + 2);
-            new_x_hat_t << x_hat_t, new_val;
-            x_hat_t = new_x_hat_t;
-            Eigen::MatrixXd HR(2, 3);
-            HR << -std::cos(x_hat_t[2]), -std::sin(x_hat_t[2]), -std::sin(x_hat_t[2]) * (0 - x_hat_t[0])
-                + std::cos(x_hat_t[2]) * (0 - x_hat_t[1]),
-                std::sin(x_hat_t[2]), -std::cos(x_hat_t[2]), -std::cos(x_hat_t[2]) * (0 - x_hat_t[0])
-                - std::sin(x_hat_t[2]) * (0 - x_hat_t[1]);
+            new_x_hat_t << x_hat_t, 
+                new_val;
+            x_hat_t = new_x_hat_t;                                                  // dimension may not agree
+            
             //std::cout<<"Update x_hat_t finished"<<std::endl;
             int rows_n, cols_n;
             rows_n = Sigma_x_t.rows();
@@ -307,7 +346,7 @@ void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std
 
             //bot right block
             Eigen::MatrixXd last_block;
-            last_block = HLi.inverse().eval() * (HR * Sigma_x_t.block(0, 0, 3, 3) * HR.transpose() + Sigma_ms[measure_count]) * HLi.transpose().inverse().eval();
+            last_block = HLi.inverse().eval() * (HR * Sigma_x_t.block(0, 0, 3, 3) * HR.transpose() + Sigma_ms) * HLi.transpose().inverse().eval();
             //std::cout<<"new last block finished\n"<< last_block <<std::endl;
 
             Eigen::MatrixXd new_Sigma(rows_n + 2, cols_n + 2);
@@ -343,7 +382,7 @@ void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std
             x_hat_t = x_hat_t + K_best * r_i_best;
             //std::cout << "Here is the matrix x_hat_tpdt:\n" << x_hat_tpdt << std::endl;
             //std::cout << "Start updating Sigma_x_t" << std::endl;
-            Sigma_x_t = I_KH * Sigma_x_t * I_KH.transpose() + K_best * Sigma_ms[measure_count] * K_best.transpose();
+            Sigma_x_t = I_KH * Sigma_x_t * I_KH.transpose() + K_best * Sigma_ms * K_best.transpose();
             //std::cout << "Existed landmark updated measure_count="<<measure_count<< std::endl;
         }
 
