@@ -8,7 +8,7 @@
 #include "geometry_msgs/Twist.h"
 #include "sensor_msgs/LaserScan.h"
 #include <visualization_msgs/Marker.h>
-#include "SLAM.h"
+#include "SLAM.cpp"
 #include "Planner.h"
 
 #include "beginner_tutorials/integrated_msg.h"
