@@ -1,9 +1,20 @@
 #include "header.h"
+using namespace std;
 
 class SLAM{
   public:
 	beginner_tutorials::integrated_msg integrated_msg;
+	Eigen::MatrixXd Sigma_n_glob;
+	Eigen::Matrix2d Sigma_ms_glob;
+        Eigen::VectorXd x_hat_t_glob;
+        Eigen::VectorXd x_hat_tpdt_glob;
+        Eigen::MatrixXd Sigma_x_t_glob;
+        Eigen::MatrixXd Sigma_x_tpdt_glob;
+        
+        
+
   public: 
+	void init_SLAM();
 	void do_SLAM();
 	void EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::VectorXd u, Eigen::MatrixXd Sigma_n, double dt,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt);
@@ -12,16 +23,42 @@ class SLAM{
 }; //std::vector<Eigen::MatrixXd> Sigma_ms,
 
 
-
+void SLAM::init_SLAM(){
+	Eigen::VectorXd x_T = Eigen::Vector3d(0,0,3.1415926);
+     	Sigma_n_glob = 0.03*0.03 * Eigen::Matrix2d::Identity();
+	Sigma_ms_glob = 0.05*0.05 * Eigen::Matrix2d::Identity();
+        x_hat_t_glob = x_T;
+        //x_hat_tpdt_glob = x_T;
+        Sigma_x_t_glob = 0.05*0.05 * Eigen::Matrix3d::Identity();
+        //Sigma_x_tpdt_glob;
+}
 
 
 void SLAM::do_SLAM(){
+	
+	
+	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
+	cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
+	Eigen::VectorXd u = Eigen::Vector2d(a,b);
+	cout<<"do slam start"<<"a is "<<u[0]<<"b is"<<u[1]<<endl;
+     	EKFSLAMPropagate(x_hat_t_glob,  Sigma_x_t_glob,  u,  Sigma_n_glob, dt ,
+     		x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+     
+     	x_hat_t_glob= x_hat_tpdt_glob;
+     	Sigma_x_t_glob = Sigma_x_tpdt_glob;
+	cout<<"RelPose UPDATE start"<<endl;
+     	EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob,
+    		x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+
+	x_hat_t_glob = x_hat_tpdt_glob;
+	Sigma_x_t_glob = Sigma_x_tpdt_glob;
+	cout<<"RelPose UPDATE end"<<endl;
 };
 
 void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::VectorXd u, Eigen::MatrixXd Sigma_n, double dt,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {       // u : velocity and angular velocity, Sigma_n: user-defined
     // TODO
-    //std::cout << "EKFSLAMPropagate start" << std::endl;
+    std::cout << "EKFSLAMPropagate start" << std::endl;
 
     Eigen::Matrix3d A_R;
     A_R << 1.0, 0.0, -dt * u[0] * std::sin(x_hat_t[2]),
@@ -36,7 +73,8 @@ void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, 
     x_hat_tpdt[0] = x_hat_t[0] + dt * u[0] * std::cos(x_hat_t[2]);
     x_hat_tpdt[1] = x_hat_t[1] + dt * u[0] * std::sin(x_hat_t[2]);
     x_hat_tpdt[2] = x_hat_t[2] + dt * u[1];
-
+    
+    std::cout << "x propagate" << std::endl;
 
     int r = Sigma_x_t.rows();
     int c = Sigma_x_t.cols();
@@ -50,6 +88,8 @@ void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, 
     Eigen::MatrixXd N;
     N.setZero(r2, c2);
     N.block<3, 2>(0, 0) = N_R;
+    
+    std::cout << "x propagate2" << std::endl;
 
     //update Sigma_x_tpdt
     //copy value
@@ -96,7 +136,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         }
         Bearing = Bearing + Del_B;
      }
-
+    std::cout << "layserscan date convertion" << std::endl;
 
     int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
     Eigen::MatrixXd LaserXY;
@@ -113,7 +153,9 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         LaserXY(i,0) = XR + std::cos(TheR) * LaserXY(i,0) - std::sin(TheR) * LaserXY(i,1);  // X coordinates in global frame
         LaserXY(i,1) = YR + std::sin(TheR) * LaserXY(i,1) + std::cos(TheR) * LaserXY(i,1);;  // Y coordinates in global frame
     }
-
+    
+    std::cout << "from robot frame to global frame" << std::endl;
+ 
     int sampleNum = 2;
     int iterNum = 300; // number of iterations
     double InlrRation = 0.1; // inlier ration
@@ -128,28 +170,39 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     double dis;   // distance from point to the line
     Eigen::MatrixXd LinePara; // line parameters
 
+    std::cout << "before for loop" << std::endl;
+    if(num_left<1){
+	x_hat_tpdt = x_hat_t;
+        Sigma_x_tpdt = Sigma_x_t;
+        return;
+	}
     for (int i = 1; i <= iterNum; i++) {
+	cout<<"i "<<i<<endl;
         if (num_left < InlrThr) {
+		cout<<"break"<<num_left<<"   "<<InlrThr<<endl;
             break;             // if the number of points left is smaller than the inliere threshold, exit the loop
         }
+	cout<<"assign vals 0-1 "<<num_left<<endl;
+	cout<<"break"<<"   "<<rand()<<"val = "<< rand() % num_left <<endl;
         int N1 = rand() % num_left;
         int N2 = N1;
+	cout<<"assign vals 0 "<<endl;
         while (N1 == N2) {
             N2 = rand() % num_left;
         }
-        Eigen::Vector2d P1;
-	P1 << newLaserXY(N1,0),
-            newLaserXY(N1,1);//[][]... (i,j)
-        Eigen::Vector2d P2;
-	P2 << newLaserXY(N2,0),
-            newLaserXY(N2,1);
+	cout<<"assign vals"<<endl;
+        Eigen::Vector2d P1 = Eigen::Vector2d(newLaserXY(N1,0),
+            newLaserXY(N1,1));
+        Eigen::Vector2d P2 = Eigen::Vector2d(newLaserXY(N2,0),
+            newLaserXY(N2,1));
+	cout<<"assign vals2"<<endl;
         Eigen::Vector2d P_12 = P1 - P2;
         Eigen::Vector2d P12 = P_12.normalized();
-        Eigen::Vector2d normP;
-	normP << P12[1],
-            -P12[0];//
+        Eigen::Vector2d normP =  Eigen::Vector2d(P12[1],
+            -P12[0]);
         int count = 0;
         Eigen::MatrixXd Inliers;
+	cout<<"inner for start"<<endl;
         for (int j = 0; j < num_left; j++) {
             dis = newLaserXY(j,0) * normP[0] + newLaserXY(j,0) * normP[0];
             dis = abs(dis);
@@ -159,6 +212,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
                 count = count + 1;
             }
         } // find all the points lying near the line
+	cout<<"inner for finished"<<endl;
         if (count > InlrThr) { // line detected
             //least square
             
@@ -193,6 +247,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             int count_inliers = 0;
             Eigen::MatrixXd newLaserXY1;
             num_left = newLaserXY.rows();
+		cout<<"inner inner for start"<<endl;
             for (int m = 0; m < num_left;m++) {
                 for (int mm = 0; mm < Inliers.rows(); mm++) {
                     if (newLaserXY(m,0) == Inliers(mm,0) && newLaserXY(m,1) == Inliers(mm,1)) {
@@ -207,6 +262,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
                     count_inliers = count_inliers + 1;
                 }
             }
+		cout<<"inner inner for end"<<endl;
 
 
             newLaserXY = newLaserXY1;

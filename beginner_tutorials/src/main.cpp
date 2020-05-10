@@ -27,6 +27,9 @@ class ROSinterface{
 			integrated_msg.time_stamp = msg->header.stamp;
 			if(integrated_msg.delta_t>0){
 				integrated_msg.odom = *msg;
+
+				integrated_msg.u_v = msg->twist.twist.linear.x;
+				integrated_msg.u_w = msg->twist.twist.angular.z;
 				gen_marker(msg->pose.pose.position.x,msg->pose.pose.position.y);
 			}
 			
@@ -39,6 +42,7 @@ class ROSinterface{
 		}
 	} 
 	public: bool init_start_ros(bool debug_tag){
+		slam_handle.init_SLAM();
 		cur_marker_id = 0;
 		integrated_msg.tag = 0;
 		integrated_msg.delta_t=-1;
@@ -59,7 +63,7 @@ class ROSinterface{
 		uint32_t shape = visualization_msgs::Marker::CUBE;
 		visualization_msgs::Marker marker;
 		// Set the frame ID and timestamp.  See the TF tutorials for information on these.
-		marker.header.frame_id = "/map";
+		marker.header.frame_id = "/my_frame";
 		marker.header.stamp = ros::Time::now();
 		// Set the namespace and id for this marker.  This serves to create a unique ID
 		// Any marker sent with the same namespace and id will overwrite the old one
@@ -122,6 +126,7 @@ class ROSinterface{
 			
 			if(integrated_msg.tag==2 && integrated_msg.delta_t>0){
 				cout<<"delta_t:"<<integrated_msg.delta_t<<" tag:"<<integrated_msg.tag<<endl;
+				
 				slam_handle.do_SLAM();
 				//Declares the message to be sent
 				geometry_msgs::Twist msg = planner_handle.do_planning();
@@ -134,8 +139,8 @@ class ROSinterface{
 					msg.linear.x=4*double(rand())/double(RAND_MAX)-2;
 					//Random y value between -3 and 3
 					msg.angular.z=6*double(rand())/double(RAND_MAX)-3;
-					msg.linear.x = 1;
-					msg.linear.z = 0;
+					//msg.linear.x = 1;
+					//msg.linear.z = 0;
 					//Publish the message
 				}
 				else{
