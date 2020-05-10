@@ -1,23 +1,4 @@
-
-#include <iostream>
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <time.h>
-#include <Eigen/Dense>
-#include <math.h>
-
-#include <vector>
-#include <string>
-#include <Eigen/Core>
-#include "ros/ros.h"
-#include "nav_msgs/Odometry.h"
-#include "geometry_msgs/Twist.h"
-#include "sensor_msgs/LaserScan.h"
-#include <visualization_msgs/Marker.h>
-
-
-#include "beginner_tutorials/integrated_msg.h"
-
+#include "header.h"
 
 class SLAM{
   public:
@@ -26,9 +7,9 @@ class SLAM{
 	void do_SLAM();
 	void EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::VectorXd u, Eigen::MatrixXd Sigma_n, double dt,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt);
-	void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std::vector<Eigen::MatrixXd> Sigma_ms,
+	void EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_ms,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt);
-};
+}; //std::vector<Eigen::MatrixXd> Sigma_ms,
 
 
 
@@ -85,7 +66,7 @@ void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, 
 
 }
 
-void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, std::vector<Eigen::MatrixXd> Sigma_ms,
+void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_ms,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {  // Eigen::MatrixXd LaserRB , Sigma_ms MatrixXd Sigma_ms(2,2)
     // Pass in LaserScan measurement date
     // TODO
@@ -158,7 +139,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         }
         Eigen::Vector2d P1;
 	P1 << newLaserXY(N1,0),
-            newLaserXY(N1,1);
+            newLaserXY(N1,1);//[][]... (i,j)
         Eigen::Vector2d P2;
 	P2 << newLaserXY(N2,0),
             newLaserXY(N2,1);
@@ -166,15 +147,15 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         Eigen::Vector2d P12 = P_12.normalized();
         Eigen::Vector2d normP;
 	normP << P12[1],
-            -P[0];
+            -P12[0];//
         int count = 0;
         Eigen::MatrixXd Inliers;
         for (int j = 0; j < num_left; j++) {
-            dis = newLaserXY[j][0] * normP[0] + newLaserXY[j][0] * normP[0];
+            dis = newLaserXY(j,0) * normP[0] + newLaserXY(j,0) * normP[0];
             dis = abs(dis);
             if (dis < DisThr) {                
                 Eigen::MatrixXd Inliers_row = newLaserXY.block(j,0,1,2);
-                Inliers.block(count,0,1,2) = Inliers.row;
+                Inliers.block(count,0,1,2) = Inliers_row;
                 count = count + 1;
             }
         } // find all the points lying near the line
@@ -187,20 +168,22 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             double sumX2 = 0.0;
             int num_liers = Inliers.rows();
             for (int k = 0; k < Inliers.rows();k++) {
-                sumX = sumX + Inliers[k][0];
-                sumY = sumY + Inliers[k][1];
-                sumXY = sumXY + Inliers[k][0] * Inliers[k][1];
-                sumX2 = sumX2 + Inliers[k][0] * Inliers[k][0];                
+                sumX = sumX + Inliers(k,0);
+                sumY = sumY + Inliers(k,1);
+                sumXY = sumXY + Inliers(k,0) * Inliers(k,1);
+                sumX2 = sumX2 + Inliers(k,0) * Inliers(k,0);                
             }
             if (abs(num_liers * sumX - sumX2) < 0.01) {
-                Eigen::MatrixXd LineParaRow << 1, 0, -sumX / num_liers;
+                Eigen::MatrixXd LineParaRow;
+                LineParaRow << 1, 0, -sumX / num_liers;
                 LinePara.block(num_line, 0, 1, 3) = LineParaRow;
                 num_line = num_line + 1;
             } // line is vertical to X axis
             else {
                 double a1 = (num_liers*sumXY - sumX*sumY) / (num_liers*sumX2 - sumX*sumX);
                 double a0 = sumY / num_liers - a1 * sumX / num_liers;
-                Eigen::MatrixXd LineParaRow << a1, -1, a0;
+                Eigen::MatrixXd LineParaRow;
+                LineParaRow << a1, -1, a0;
                 LinePara.block(num_line, 0, 1, 3) = LineParaRow;
                 num_line = num_line + 1;
             } // line parameters stored in LinePara
@@ -208,19 +191,20 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             // next delete all inliers from the newLaserXY
             int flag = 1;
             int count_inliers = 0;
-            Eigen::MatrixXd newlaserXY1 = newLaserXY;
+            Eigen::MatrixXd newLaserXY1;
             num_left = newLaserXY.rows();
             for (int m = 0; m < num_left;m++) {
                 for (int mm = 0; mm < Inliers.rows(); mm++) {
-                    if (newLaserXY[m][0] == Inliers[mm][0] && newLaserXY[m][1] == Inliers[mm][1]) {
+                    if (newLaserXY(m,0) == Inliers(mm,0) && newLaserXY(m,1) == Inliers(mm,1)) {
                         flag = 0;
                         break;
                     }
                 }
                 if (flag == 1) {
-                    Eigen::MatrixXd newlaserXY1_row << newLaserXY[m][0], newLaserXY[m][1];
-                    newlaserXY1.block(count_inliers, 0, 1, 2) = newlaserXY1_row;
-                    count_liers = count_liers + 1;
+                    Eigen::MatrixXd newLaserXY1_row;
+                    newLaserXY1_row << newLaserXY(m,0), newLaserXY(m,1);
+                    newLaserXY1.block(count_inliers, 0, 1, 2) = newLaserXY1_row;
+                    count_inliers = count_inliers + 1;
                 }
             }
 
@@ -235,16 +219,16 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     Eigen::MatrixXd Landmark;
     num_line = LinePara.rows();
     for (int pp = 0; pp < num_line;pp++) {
-        double a = LinePara[pp][0];
-        double b = LinePara[pp][1];
-        double c = LinePara[pp][2];
-        if (LinePara[pp][1] == 0) {
-            Landmark[pp][0] = LinePara[pp][1];
-            Landmark[pp][1] = 0;
+        double a = LinePara(pp,0);
+        double b = LinePara(pp,1);
+        double c = LinePara(pp,2);
+        if (LinePara(pp,1) == 0) {
+            Landmark(pp,0) = LinePara(pp,1);
+            Landmark(pp,1) = 0;
         }
         else {
-            Landmark[pp][0] = (-a * c) / (a ^ 2 + b ^ 2);
-            Landmark[pp][0] = (-b * c) / (a ^ 2 + b ^ 2);
+            Landmark(pp,0) = (-a * c) / (a * a + b * b);
+            Landmark(pp,0) = (-b * c) / (a * b + b * b);
         }
     }
 
@@ -260,8 +244,8 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         //std::cout << "Here is Sigma_ms length:\n" << Sigma_ms.size() << std::endl;
         //std::cout << "Here is zs length:\n" << zs.size() << std::endl;
 
-        double L_x = Landmark[ii][0];
-        double L_y = Landmark[ii][1];
+        double L_x = Landmark(ii,0);
+        double L_y = Landmark(ii,1);
         double R_x = x_hat_t[0];
         double R_y = x_hat_t[1];
         double R_the = x_hat_t[2];
@@ -272,7 +256,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         Eigen::VectorXd r_i_best;
 
         Eigen::VectorXd z(2,1);     // landmark measurement
-        z[0] = sqrt((L_x - R_x) ^ 2 + (L_y - R_y) ^ 2);
+        z[0] = sqrt((L_x - R_x) * (L_x - R_x) + (L_y - R_y) * (L_y - R_y));
         z[1] = std::atan2(L_y - R_y, L_x - R_x) - R_the;
 
         for (int i3 = 1; i3 <= measurementNumber; i3++) {
@@ -280,14 +264,14 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             
             double Lxi = x_hat_t[3 + 2 * (i3 - 1)];
             double Lyi = x_hat_t[4 + 2 * (i3 - 1)];
-            double r_hat = sqrt((Lxi - R_x)^2 + (Lyi - R_y)^2);
+            double r_hat = sqrt((Lxi - R_x)*(Lxi - R_x) + (Lyi - R_y)*(Lyi - R_y));
             Eigen::VectorXd r_i;   // innovation 2 X 1
             Eigen::MatrixXd HR(2, 3);
             HR << (R_x - Lxi) / r_hat, (R_y - Lyi) / r_hat, 0,
-                (Lyi - R_y) / (r_hat) ^ 2, (Lxi - R_x) / (r_hat) ^ 2, -1;
+                (Lyi - R_y) / ((r_hat) * (r_hat)), (Lxi - R_x) / ((r_hat) * (r_hat)), -1;
             Eigen::MatrixXd HLi(2, 2);
             HLi << -(R_x - Lxi) / r_hat, -(R_y - Lyi) / r_hat,
-                -(Lyi - R_y) / (r_hat) ^ 2, -(Lxi - R_x) / (r_hat) ^ 2;
+                -(Lyi - R_y) / ((r_hat) * (r_hat)), -(Lxi - R_x) / ((r_hat) * (r_hat));
 
             Eigen::MatrixXd H;
             H = Eigen::MatrixXd::Zero(2, 3 + 2 * measurementNumber);
@@ -299,7 +283,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             S = H * Sigma_x_t * H.transpose() + Sigma_ms;  // S = H * Sigma_x_t * H.transpose() + Sigma_ms[measure_count]
             //std::cout << "Calculate S finished:\n" << S.size() << std::endl;
             Eigen::VectorXd h_xLi0(2); // estimated measurement
-            h_xLi0[0] = sqrt((Lxi - R_x) ^ 2 + (Lyi - R_y) ^ 2);
+            h_xLi0[0] = sqrt((Lxi - R_x) * (Lxi - R_x) + (Lyi - R_y) * (Lyi - R_y));
             h_xLi0[1] = std::atan2(Lyi - R_y, Lxi - R_x) - R_the;
 
             r_i = z - h_xLi0; // innovation
@@ -327,13 +311,13 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             
             
 
-            double r_hat = sqrt((L_x - R_x) ^ 2 + (L_y - R_y) ^ 2);
+            double r_hat = sqrt((L_x - R_x) * (L_x - R_x) + (L_y - R_y) * (L_y - R_y));
             Eigen::MatrixXd HR(2, 3);
             HR << (R_x - L_x) / r_hat, (R_y - L_y) / r_hat, 0,
-                (L_y - R_y) / (r_hat) ^ 2, (L_x - R_x) / (r_hat) ^ 2, -1;
+                (L_y - R_y) / ((r_hat) * (r_hat)), (L_x - R_x) / ((r_hat) * (r_hat)), -1;
             Eigen::MatrixXd HLi(2, 2);
             HLi << -(R_x - L_x) / r_hat, -(R_y - L_y) / r_hat,
-                -(L_y - R_y) / (r_hat) ^ 2, -(L_x - R_x) / (r_hat) ^ 2;
+                -(L_y - R_y) / ((r_hat) * (r_hat)), -(L_x - R_x) / ((r_hat) * (r_hat));
 
             //Eigen::VectorXd h_xLi0(2);
             //h_xLi0[0] = std::cos(x_hat_t[2]) * (0 - x_hat_t[0]) + std::sin(x_hat_t[2]) * (0 - x_hat_t[1]);
