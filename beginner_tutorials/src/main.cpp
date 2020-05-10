@@ -147,7 +147,8 @@ class ROSinterface{
 
 				cout<<"landmark size is"<<(slam_handle.x_hat_t_glob.size()-3)/2.0<<endl;
 				for(int i=0;i<(slam_handle.x_hat_t_glob.size()-3)/2.0;i++){
-					float x = slam_handle.x_hat_t_glob[3+2*i],y = slam_handle.x_hat_t_glob[3+2*i+1];
+					float x = slam_handle.x_hat_t_glob[3+2*i],
+						y = slam_handle.x_hat_t_glob[3+2*i+1];
 					gen_marker(x,y,i);
 				}
 				//Declares the message to be sent

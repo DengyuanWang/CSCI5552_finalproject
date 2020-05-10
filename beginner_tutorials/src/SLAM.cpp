@@ -39,7 +39,6 @@ void SLAM::init_SLAM(){
 
 void SLAM::do_SLAM(){
 	
-	
 	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
 	//cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
 	Eigen::VectorXd u = Eigen::Vector2d(a,b);
@@ -127,7 +126,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         Sigma_x_tpdt = Sigma_x_t;
         return;
     }
-	//cout<<"scan len is "<<len<<endl;
+    cout<<"scan len is "<<len<<endl;
     double Bearing = integrated_msg.layserScan.angle_min;
     double Del_B = integrated_msg.layserScan.angle_increment;
 
@@ -150,14 +149,19 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         }
         Bearing = Bearing + Del_B;
      }
+    if(val_vec.size()<1){
+	x_hat_tpdt = x_hat_t;
+        Sigma_x_tpdt = Sigma_x_t;
+        return;
+    }
     Eigen::VectorXd vals = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
     Eigen::VectorXd bearings = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
     Eigen::MatrixXd LaserRB(vals.rows(), vals.cols()+bearings.cols());
     LaserRB<<vals,bearings;
-    //cout<< "layserscan date convertion" << std::endl;
+    cout<< "layserscan date convertion" << std::endl;
 
     int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
-    //cout<<"num"<<num_meas<<endl;
+    cout<<"num"<<num_meas<<endl;
     vector<double> X_tmp,Y_tmp;
     
     for (int i = 0; i < num_meas; i++) {
@@ -193,7 +197,8 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     int num_pts;
     int num_line = 0; // number of lines detected
     double dis;   // distance from point to the line
-    Eigen::MatrixXd LinePara; // line parameters
+    //Eigen::MatrixXd LinePara; // line parameters
+    vector<double> LineParax,LineParay,LineParaz;
 
     if(num_left<1){
 	x_hat_tpdt = x_hat_t;
@@ -202,7 +207,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
 	}
     cout<< "before for loop" << std::endl;
     for (int i = 1; i <= iterNum; i++) {
-	//cout<<"i "<<i<<endl;
+	cout<<"i is"<<i<<endl;
         if (num_left < InlrThr) {
 		//cout<<"break"<<num_left<<"   "<<InlrThr<<endl;
             break;             // if the number of points left is smaller than the inliere threshold, exit the loop
@@ -211,36 +216,48 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
 	//cout<<"break"<<"   "<<rand()<<"val = "<< rand() % num_left <<endl;
         int N1 = rand() % num_left;
         int N2 = N1;
-	//cout<<"assign vals 0 "<<endl;
+	cout<<"assign vals 0 "<<endl;
         while (N1 == N2) {
             N2 = rand() % num_left;
         }
-	//cout<<"assign vals"<<endl;
+	cout<<"assign vals"<<endl;
         Eigen::Vector2d P1 = Eigen::Vector2d(newLaserXY(N1,0),
             newLaserXY(N1,1));
         Eigen::Vector2d P2 = Eigen::Vector2d(newLaserXY(N2,0),
             newLaserXY(N2,1));
-	//cout<<"assign vals2"<<endl;
+	cout<<"assign vals2"<<endl;
         Eigen::Vector2d P_12 = P1 - P2;
         Eigen::Vector2d P12 = P_12.normalized();
         Eigen::Vector2d normP =  Eigen::Vector2d(P12[1],
             -P12[0]);
         int count = 0;
-        Eigen::MatrixXd Inliers;
-	//cout<<"inner for start"<<endl;
+        //Eigen::MatrixXd Inliers;
+	vector<double> in_x,in_y;
+	cout<<"inner for start"<<endl;
         for (int j = 0; j < num_left; j++) {
-            dis = newLaserXY(j,0) * normP[0] + newLaserXY(j,0) * normP[0];
+	    cout<<"newLaserXY is "<<newLaserXY.rows()<<endl;
+            dis = newLaserXY(j,0) * normP[0] + newLaserXY(j,1) * normP[1];
             dis = abs(dis);
-            if (dis < DisThr) {                
+            if (dis < DisThr) {  
+		cout<<"dis is "<<dis<<"j is "<<j<<endl;       
+		cout<<"here"<<newLaserXY.block(j,0,1,2)<<endl;       
                 Eigen::MatrixXd Inliers_row = newLaserXY.block(j,0,1,2);
-                Inliers.block(count,0,1,2) = Inliers_row;
+		cout<<"Inliers_row is "<<Inliers_row<<endl;
+                in_x.push_back(Inliers_row(0,0));
+		in_y.push_back(Inliers_row(0,1));
+                //Inliers.block(count,0,1,2) = Inliers_row;
                 count = count + 1;
             }
         } // find all the points lying near the line
-	//cout<<"inner for finished"<<endl;
+	cout<<"inner for finished"<<"count is "<<count<<endl;
         if (count > InlrThr) { // line detected
             //least square
             
+		Eigen::VectorXd in_X_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(in_x.data(), in_x.size());
+		Eigen::VectorXd in_Y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(in_y.data(), in_y.size());
+		Eigen::MatrixXd Inliers(in_X_.rows(), in_X_.cols()+in_Y_.cols());
+		Inliers<<in_X_,in_Y_;
+	    cout<<"assign val finished"<<endl;
             double sumX = 0.0;
             double sumY = 0.0;
             double sumXY = 0.0;
@@ -253,53 +270,86 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
                 sumX2 = sumX2 + Inliers(k,0) * Inliers(k,0);                
             }
             if (abs(num_liers * sumX - sumX2) < 0.01) {
-                Eigen::MatrixXd LineParaRow;
-                LineParaRow << 1, 0, -sumX / num_liers;
-                LinePara.block(num_line, 0, 1, 3) = LineParaRow;
+                //Eigen::MatrixXd LineParaRow;
+                //LineParaRow << 1, 0, -sumX / num_liers;
+		LineParax.push_back(1);LineParay.push_back(0);LineParaz.push_back(-sumX / num_liers);
+                //LinePara.block(num_line, 0, 1, 3) = ;
+		//cout<<"LinePara.block "<< LinePara.block(num_line, 0, 1, 3) <<endl;
                 num_line = num_line + 1;
             } // line is vertical to X axis
             else {
                 double a1 = (num_liers*sumXY - sumX*sumY) / (num_liers*sumX2 - sumX*sumX);
                 double a0 = sumY / num_liers - a1 * sumX / num_liers;
-                Eigen::MatrixXd LineParaRow;
-                LineParaRow << a1, -1, a0;
-                LinePara.block(num_line, 0, 1, 3) = LineParaRow;
+                //Eigen::MatrixXd LineParaRow;
+                //LineParaRow << a1, -1, a0;
+		LineParax.push_back(a1);LineParay.push_back(-1);LineParaz.push_back(a0);
+                //LinePara.block(num_line, 0, 1, 3) = LineParaRow;
+                //cout<<"LinePara.block "<< LinePara.block(num_line, 0, 1, 3) <<endl;
                 num_line = num_line + 1;
             } // line parameters stored in LinePara
         
             // next delete all inliers from the newLaserXY
             int flag = 1;
             int count_inliers = 0;
-            Eigen::MatrixXd newLaserXY1;
+            //Eigen::MatrixXd newLaserXY1;
+	    vector<double> newLaserXY1x,newLaserXY1y;
             num_left = newLaserXY.rows();
-		//cout<<"inner inner for start"<<endl;
+	    cout<<"inner inner for start"<<endl;
             for (int m = 0; m < num_left;m++) {
                 for (int mm = 0; mm < Inliers.rows(); mm++) {
                     if (newLaserXY(m,0) == Inliers(mm,0) && newLaserXY(m,1) == Inliers(mm,1)) {
+			cout<<"INTO FLAG 0 "<<endl;
                         flag = 0;
                         break;
                     }
                 }
                 if (flag == 1) {
-                    Eigen::MatrixXd newLaserXY1_row;
-                    newLaserXY1_row << newLaserXY(m,0), newLaserXY(m,1);
-                    newLaserXY1.block(count_inliers, 0, 1, 2) = newLaserXY1_row;
-                    count_inliers = count_inliers + 1;
+		//	cout<<"INTO FLAG 1 M IS "<<m<<newLaserXY.block(m, 0, 1, 2)<<endl;
+                    Eigen::MatrixXd newLaserXY1_row=newLaserXY.block(m, 0, 1, 2);
+			
+		    newLaserXY1x.push_back(newLaserXY1_row(0,0));newLaserXY1y.push_back(newLaserXY1_row(0,1));
+                    //newLaserXY1.block(count_inliers, 0, 1, 2) = newLaserXY1_row;          //
+                    count_inliers = count_inliers + 1; 
+		    
                 }
             }
-		//cout<<"inner inner for end"<<endl;
-
-
+	    cout<<"inner inner for end"<<endl;
+	    if(newLaserXY1x.size()<1){
+                num_left = 0;
+	    	continue;
+	    }
+            Eigen::VectorXd newLaserXY1x_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(newLaserXY1x.data(), newLaserXY1x.size());
+    
+    	    Eigen::VectorXd newLaserXY1y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(newLaserXY1y.data(), newLaserXY1y.size());
+    	    Eigen::MatrixXd newLaserXY1(newLaserXY1x_.rows(), 2);            
+	    newLaserXY1<<newLaserXY1x_,newLaserXY1y_;
             newLaserXY = newLaserXY1;
             num_left = newLaserXY.rows();
+     	    cout<<"inner inner assign val end"<<endl;
         } // LSQ method to fit a line based on all those inliers found(Inliers)     
 
     } // RANSAC LinePara
+    cout<<"num_line is "<<num_line<<endl;
     cout<<"Ransac"<<endl;
     // point landmark extraction
-
-    Eigen::MatrixXd Landmark;
+    if(num_line<1){
+	x_hat_tpdt = x_hat_t;
+    	Sigma_x_tpdt = Sigma_x_t;
+	return;
+    }
+    cout<<"ASSIGN VAL AFTER RANSAC"<< LineParax.size()<<endl;
+    Eigen::VectorXd LineParax_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParax.data(), LineParax.size());
+    
+    Eigen::VectorXd LineParay_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParay.data(), LineParay.size());
+    
+    Eigen::VectorXd LineParaz_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParaz.data(), LineParaz.size());
+    Eigen::MatrixXd LinePara(LineParax_.rows(), 3);
+    LinePara<<LineParax_,LineParay_,LineParaz_;
+    
+    cout<<"ASSIGN VAL AFTER RANSAC FINISHED"<< LinePara<<endl;
+    
     num_line = LinePara.rows();
+    Eigen::MatrixXd Landmark(num_line,2);
     for (int pp = 0; pp < num_line;pp++) {
         double a = LinePara(pp,0);
         double b = LinePara(pp,1);
@@ -572,7 +622,7 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
     cout<<"finish creating zs and sigmams"<<endl;
 
 
-    double Mahalanobis_distance_Upthreshold = 5.9915,Mahalanobis_distance_Lowthreshold=0.5;
+    double Mahalanobis_distance_Upthreshold = 5.9915,Mahalanobis_distance_Lowthreshold=0.25;
     int measure_count = 0;
     for(int idx = 0;idx<zs.size();idx++){
         Eigen::VectorXd z = zs[idx];
