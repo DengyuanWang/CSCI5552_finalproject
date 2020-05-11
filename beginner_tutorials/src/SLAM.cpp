@@ -1,4 +1,7 @@
 #include "header.h"
+
+#include "filter.cpp"
+
 using namespace std;
 
 class SLAM{
@@ -40,6 +43,7 @@ void SLAM::init_SLAM(){
 
 void SLAM::do_SLAM(){
 	
+
 	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
 	//cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
 	Eigen::VectorXd u = Eigen::Vector2d(a,b);
@@ -50,8 +54,11 @@ void SLAM::do_SLAM(){
      	x_hat_t_glob= x_hat_tpdt_glob;
      	Sigma_x_t_glob = Sigma_x_tpdt_glob;
 	//cout<<"RelPose UPDATE start"<<endl;
-     	EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
-	//EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+
+     	//EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+
+	EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+
 	x_hat_t_glob = x_hat_tpdt_glob;
 	Sigma_x_t_glob = Sigma_x_tpdt_glob;
 	//cout<<"RelPose UPDATE end"<<endl;
@@ -111,6 +118,7 @@ void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, 
     // Note that these we passed by reference, so to return, just set them
 
 }
+
 
 void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_ms,
     Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {  // Eigen::MatrixXd LaserRB , Sigma_ms MatrixXd Sigma_ms(2,2)
@@ -601,74 +609,28 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
 }
 
 
+
 void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_m_,
                          Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {
     // TODO
  	
     std::vector<Eigen::VectorXd> zs;
     std::vector<Eigen::MatrixXd> Sigma_ms;
-    int len = integrated_msg.layserScan.ranges.size();
-    if(len==0){
-        x_hat_tpdt = x_hat_t;
-        Sigma_x_tpdt = Sigma_x_t;
-        return;
-    }
-	cout<<"scan len is "<<len<<endl;
-    double Bearing = integrated_msg.layserScan.angle_min;
-    double Del_B = integrated_msg.layserScan.angle_increment;
 
-    vector<double> val_vec,bearing_vec;
-    int countValid = 0;
-    for (int i_l = 0; i_l < len; i_l++) {
-        if (isnan(integrated_msg.layserScan.ranges[i_l])) {
-	    ////cout<<"find nan "<<integrated_msg.layserScan.ranges[i_l]<<"idx is "<<i_l<<endl;
-            // do nothing
-        }
-        else {
-	    
-	    float val = integrated_msg.layserScan.ranges[i_l];
-	    //cout<<"find not nan "<< val<<endl;
-	    val_vec.push_back(val);
-	    bearing_vec.push_back(Bearing);
-            //LaserRB(countValid,0) = val;
-            //LaserRB(countValid,1) = Bearing;
-            countValid = countValid + 1;
-        }
-        Bearing = Bearing + Del_B;
-     }
-    if(countValid==0){
-	cout<<"no valid scan"<<endl;
-	Sigma_x_tpdt = Sigma_x_t;
-	x_hat_tpdt = x_hat_t;
-	return ;
+    int len = integrated_msg.pcloud.points.size();
+	cout<<"len is"<<len<<endl;
+	
+    if(len<1){
+   	x_hat_tpdt = x_hat_t;
+    	Sigma_x_tpdt = Sigma_x_t;
+	return;
 	}
-    Eigen::VectorXd vals = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
-    Eigen::VectorXd bearings = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
-    Eigen::MatrixXd LaserRB(vals.rows(), vals.cols()+bearings.cols());
-    LaserRB<<vals,bearings;
-    //cout<< "layserscan date convertion" << std::endl;
 
-    int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
-    //cout<<"num"<<num_meas<<endl;
-    vector<double> X_tmp,Y_tmp;
-    
-    for (int i = 0; i < num_meas; i++) {
-	X_tmp.push_back(LaserRB(i,0) * std::cos(LaserRB(i,1)));// X coordinates in robot frame
-	Y_tmp.push_back(LaserRB(i,0) * std::sin(LaserRB(i,1))); // Y coordinates in robot frame
+    for (int i = 0; i < integrated_msg.pcloud.points.size(); i++) {
+        float x = integrated_msg.pcloud.points[i].x;  // X coordinates in global frame
+        float y = integrated_msg.pcloud.points[i].y;  // Y coordinates in global frame
+	cout<<"cloud is "<<x<<"  "<<y<<endl;
 
-     }
-    Eigen::VectorXd X_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(X_tmp.data(), X_tmp.size());
-    Eigen::VectorXd Y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(Y_tmp.data(), Y_tmp.size());
-    Eigen::MatrixXd LaserXY(X_.rows(), X_.cols()+Y_.cols());
-    LaserXY<<X_,Y_;
-	cout<<"finish converting robot frame"<<endl;
-    //convert LaserXY to global frame
-    double XR = x_hat_t[0];
-    double YR = x_hat_t[1];
-    double TheR = x_hat_t[2];
-    for (int i = 0; i < num_meas; i++) {
-        float x = XR + std::cos(TheR) * LaserXY(i,0) - std::sin(TheR) * LaserXY(i,1);  // X coordinates in global frame
-        float y = YR + std::sin(TheR) * LaserXY(i,1) + std::cos(TheR) * LaserXY(i,1);;  // Y coordinates in global frame
         Eigen::VectorXd z = Eigen::Vector2d(x,y);
 	zs.push_back(z);
         Sigma_ms.push_back(Sigma_m_);
@@ -678,7 +640,9 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
     cout<<"finish creating zs and sigmams"<<endl;
 
 
-    double Mahalanobis_distance_Upthreshold = 5.9915,Mahalanobis_distance_Lowthreshold=0.25;
+
+    double Mahalanobis_distance_Upthreshold = 5.9915,Mahalanobis_distance_Lowthreshold=0.5;
+
     int measure_count = 0;
     for(int idx = 0;idx<zs.size();idx++){
         Eigen::VectorXd z = zs[idx];

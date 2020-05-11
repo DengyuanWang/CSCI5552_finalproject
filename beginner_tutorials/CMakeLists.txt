@@ -16,7 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   sensor_msgs
   visualization_msgs
+  laser_geometry
 )
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -112,8 +114,8 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES beginner_tutorials
    CATKIN_DEPENDS
-	message_runtime	
-	roscpp rospy tf std_msgs nav_msgs sensor_msgs visualization_msgs
+	message_runtime	roscpp rospy tf std_msgs nav_msgs sensor_msgs visualization_msgs laser_geometry
+
    DEPENDS 
 	EIGEN3 
 
