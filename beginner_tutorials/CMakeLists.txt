@@ -114,8 +114,8 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES beginner_tutorials
    CATKIN_DEPENDS
-	message_runtime	
-	roscpp rospy tf std_msgs nav_msgs sensor_msgs visualization_msgs laser_geometry
+	message_runtime	roscpp rospy tf std_msgs nav_msgs sensor_msgs visualization_msgs laser_geometry
+
    DEPENDS 
 	EIGEN3 
 

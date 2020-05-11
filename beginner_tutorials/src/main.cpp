@@ -8,7 +8,9 @@ class ROSinterface{
 	string cmd_topic;
 	ros::NodeHandle node_handle;
 	ros::Publisher pub_cmd;
+
 	ros::Subscriber sub_odom,sub_laserscan,sub_pcloud;
+
 	SLAM slam_handle;
 	Planner planner_handle;
 	beginner_tutorials::integrated_msg integrated_msg;
@@ -46,6 +48,7 @@ class ROSinterface{
 			integrated_msg.layserScan = *msg;
 		}
 	} 
+
 	void PointCloudCallback(const sensor_msgs::PointCloud::ConstPtr& msg){
 		// subscribe to the content in topic /scan
 		if(integrated_msg.tag==2 && integrated_msg.delta_t>0){
@@ -53,6 +56,7 @@ class ROSinterface{
 			integrated_msg.pcloud = *msg;
 		}
 	} 
+
 	public: bool init_start_ros(bool debug_tag){
 
 		
@@ -73,7 +77,9 @@ class ROSinterface{
 		//10 is the queue size
 		sub_odom = node_handle.subscribe("odom", 10 , &ROSinterface::OdomCallback,this);
 		sub_laserscan = node_handle.subscribe("scan", 10 , &ROSinterface::LaserScanCallback,this);
+
 		sub_pcloud = node_handle.subscribe("my_cloud", 10 , &ROSinterface::PointCloudCallback,this);
+
 		//visualization for debug
 		marker_pub = node_handle.advertise<visualization_msgs::Marker>("visualization_marker", 1);
 
@@ -82,6 +88,7 @@ class ROSinterface{
 		ros::Duration(2).sleep(); 
 		LaserScanToPointCloud filter(node_handle);
 		
+
 		return start_ros_loop(debug_tag);
 
 	}
@@ -130,6 +137,7 @@ class ROSinterface{
 		Markers.push(marker);
 		return true;
 	}
+
 	bool gen_points(){
 		visualization_msgs::Marker points;
 		points.header.frame_id = "/world";
@@ -147,6 +155,7 @@ class ROSinterface{
 
 		// marker_pub.publish(points);
 	}
+
 	bool show_marker(){
 		br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "odom"));
 		if (marker_pub.getNumSubscribers() < 1){
@@ -175,7 +184,10 @@ class ROSinterface{
 
 				cout<<"landmark size is"<<(slam_handle.x_hat_t_glob.size()-3)/2.0<<endl;
 				for(int i=0;i<(slam_handle.x_hat_t_glob.size()-3)/2.0;i++){
-					float x = slam_handle.x_hat_t_glob[3+2*i],y = slam_handle.x_hat_t_glob[3+2*i+1];
+
+					float x = slam_handle.x_hat_t_glob[3+2*i],
+						y = slam_handle.x_hat_t_glob[3+2*i+1];
+
 					gen_marker(x,y,i);
 				}
 				//Declares the message to be sent
@@ -199,7 +211,9 @@ class ROSinterface{
 				
 				}
 				show_marker();
+
 				//gen_points();
+
 				pub_cmd.publish(msg);
 			}
 			

@@ -1,5 +1,7 @@
 #include "header.h"
+
 #include "filter.cpp"
+
 using namespace std;
 
 class SLAM{
@@ -40,7 +42,7 @@ void SLAM::init_SLAM(){
 
 void SLAM::do_SLAM(){
 	
-	
+
 	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
 	//cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
 	Eigen::VectorXd u = Eigen::Vector2d(a,b);
@@ -51,6 +53,9 @@ void SLAM::do_SLAM(){
      	x_hat_t_glob= x_hat_tpdt_glob;
      	Sigma_x_t_glob = Sigma_x_tpdt_glob;
 	//cout<<"RelPose UPDATE start"<<endl;
+
+     	//EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+
 	EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
 	x_hat_t_glob = x_hat_tpdt_glob;
 	Sigma_x_t_glob = Sigma_x_tpdt_glob;
@@ -109,12 +114,452 @@ void SLAM::EKFSLAMPropagate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, 
 }
 
 
+void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_ms,
+    Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {  // Eigen::MatrixXd LaserRB , Sigma_ms MatrixXd Sigma_ms(2,2)
+    // Pass in LaserScan measurement date
+    // TODO
+    // Laserscan measurements: distance + bearing in robot frame(LaserRB) >> x,y coordinates in robot frame(LaserXY)
+    //val =  [----]
+    //#include<math.h>
+    // if isnan(val){
+    //}
+    //len = length(in.....range)
+    //integrated_msg.layserScan.range[i] = nan/  0.011
+    //ag = integrated_msg.layserScan.angle_min
+    //ag += integrated_msg.layserScan.angle_increment
+    int len = integrated_msg.layserScan.ranges.size();
+    if(len==0){
+        x_hat_tpdt = x_hat_t;
+        Sigma_x_tpdt = Sigma_x_t;
+        return;
+    }
+    cout<<"scan len is "<<len<<endl;
+    double Bearing = integrated_msg.layserScan.angle_min;
+    double Del_B = integrated_msg.layserScan.angle_increment;
+
+    vector<double> val_vec,bearing_vec;
+    int countValid = 0;
+    for (int i_l = 0; i_l < len; i_l++) {
+        if (isnan(integrated_msg.layserScan.ranges[i_l])) {
+	    ////cout<<"find nan "<<integrated_msg.layserScan.ranges[i_l]<<"idx is "<<i_l<<endl;
+            // do nothing
+        }
+        else {
+	    
+	    float val = integrated_msg.layserScan.ranges[i_l];
+	    //cout<<"find not nan "<< val<<endl;
+	    val_vec.push_back(val);
+	    bearing_vec.push_back(Bearing);
+            //LaserRB(countValid,0) = val;
+            //LaserRB(countValid,1) = Bearing;
+            countValid = countValid + 1;
+        }
+        Bearing = Bearing + Del_B;
+     }
+    if(val_vec.size()<1){
+	x_hat_tpdt = x_hat_t;
+        Sigma_x_tpdt = Sigma_x_t;
+        return;
+    }
+    Eigen::VectorXd vals = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
+    Eigen::VectorXd bearings = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
+    Eigen::MatrixXd LaserRB(vals.rows(), vals.cols()+bearings.cols());
+    LaserRB<<vals,bearings;
+    cout<< "layserscan date convertion" << std::endl;
+
+    int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
+    cout<<"num"<<num_meas<<endl;
+    vector<double> X_tmp,Y_tmp;
+    
+    for (int i = 0; i < num_meas; i++) {
+	X_tmp.push_back(LaserRB(i,0) * std::cos(LaserRB(i,1)));// X coordinates in robot frame
+	Y_tmp.push_back(LaserRB(i,0) * std::sin(LaserRB(i,1))); // Y coordinates in robot frame
+
+     }
+    Eigen::VectorXd X_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(X_tmp.data(), X_tmp.size());
+    Eigen::VectorXd Y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(Y_tmp.data(), Y_tmp.size());
+    Eigen::MatrixXd LaserXY(X_.rows(), X_.cols()+Y_.cols());
+    LaserXY<<X_,Y_;
+
+    //convert LaserXY to global frame
+    double XR = x_hat_t[0];
+    double YR = x_hat_t[1];
+    double TheR = x_hat_t[2];
+    for (int i = 0; i < num_meas; i++) {
+        LaserXY(i,0) = XR + std::cos(TheR) * LaserXY(i,0) - std::sin(TheR) * LaserXY(i,1);  // X coordinates in global frame
+        LaserXY(i,1) = YR + std::sin(TheR) * LaserXY(i,1) + std::cos(TheR) * LaserXY(i,1);;  // Y coordinates in global frame
+    }
+    
+    cout<< "from robot frame to global frame" << std::endl;
+ 
+    int sampleNum = 2;
+    int iterNum = 300; // number of iterations
+    double InlrRation = 0.1; // inlier ration
+    int InlrThr = int(InlrRation*num_meas);  // inlire threshold, if NumInlr > threshold, a line detected 
+    double DisThr = 0.1;  // distance threshold, if distance < DisThr, inlier detected
+
+    int num_left = num_meas;  // number of points left in the set of measurements
+    Eigen::MatrixXd newLaserXY = LaserXY; // measurement sets after removing the inliers on a line
+    srand(time(0));
+    int num_pts;
+    int num_line = 0; // number of lines detected
+    double dis;   // distance from point to the line
+    //Eigen::MatrixXd LinePara; // line parameters
+    vector<double> LineParax,LineParay,LineParaz;
+
+    if(num_left<1){
+	x_hat_tpdt = x_hat_t;
+        Sigma_x_tpdt = Sigma_x_t;
+        return;
+	}
+    cout<< "before for loop" << std::endl;
+    for (int i = 1; i <= iterNum; i++) {
+	cout<<"i is"<<i<<endl;
+        if (num_left < InlrThr) {
+		//cout<<"break"<<num_left<<"   "<<InlrThr<<endl;
+            break;             // if the number of points left is smaller than the inliere threshold, exit the loop
+        }
+	//cout<<"assign vals 0-1 "<<num_left<<endl;
+	//cout<<"break"<<"   "<<rand()<<"val = "<< rand() % num_left <<endl;
+        int N1 = rand() % num_left;
+        int N2 = N1;
+	cout<<"assign vals 0 "<<endl;
+        while (N1 == N2) {
+            N2 = rand() % num_left;
+        }
+	cout<<"assign vals"<<endl;
+        Eigen::Vector2d P1 = Eigen::Vector2d(newLaserXY(N1,0),
+            newLaserXY(N1,1));
+        Eigen::Vector2d P2 = Eigen::Vector2d(newLaserXY(N2,0),
+            newLaserXY(N2,1));
+	cout<<"assign vals2"<<endl;
+        Eigen::Vector2d P_12 = P1 - P2;
+        Eigen::Vector2d P12 = P_12.normalized();
+        Eigen::Vector2d normP =  Eigen::Vector2d(P12[1],
+            -P12[0]);
+        int count = 0;
+        //Eigen::MatrixXd Inliers;
+	vector<double> in_x,in_y;
+	cout<<"inner for start"<<endl;
+        for (int j = 0; j < num_left; j++) {
+	    cout<<"newLaserXY is "<<newLaserXY.rows()<<endl;
+            dis = newLaserXY(j,0) * normP[0] + newLaserXY(j,1) * normP[1];
+            dis = abs(dis);
+            if (dis < DisThr) {  
+		cout<<"dis is "<<dis<<"j is "<<j<<endl;       
+		cout<<"here"<<newLaserXY.block(j,0,1,2)<<endl;       
+                Eigen::MatrixXd Inliers_row = newLaserXY.block(j,0,1,2);
+		cout<<"Inliers_row is "<<Inliers_row<<endl;
+                in_x.push_back(Inliers_row(0,0));
+		in_y.push_back(Inliers_row(0,1));
+                //Inliers.block(count,0,1,2) = Inliers_row;
+                count = count + 1;
+            }
+        } // find all the points lying near the line
+	cout<<"inner for finished"<<"count is "<<count<<endl;
+        if (count > InlrThr) { // line detected
+            //least square
+            
+		Eigen::VectorXd in_X_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(in_x.data(), in_x.size());
+		Eigen::VectorXd in_Y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(in_y.data(), in_y.size());
+		Eigen::MatrixXd Inliers(in_X_.rows(), in_X_.cols()+in_Y_.cols());
+		Inliers<<in_X_,in_Y_;
+	    cout<<"assign val finished"<<endl;
+            double sumX = 0.0;
+            double sumY = 0.0;
+            double sumXY = 0.0;
+            double sumX2 = 0.0;
+            int num_liers = Inliers.rows();
+            for (int k = 0; k < Inliers.rows();k++) {
+                sumX = sumX + Inliers(k,0);
+                sumY = sumY + Inliers(k,1);
+                sumXY = sumXY + Inliers(k,0) * Inliers(k,1);
+                sumX2 = sumX2 + Inliers(k,0) * Inliers(k,0);                
+            }
+            if (abs(num_liers * sumX - sumX2) < 0.01) {
+                //Eigen::MatrixXd LineParaRow;
+                //LineParaRow << 1, 0, -sumX / num_liers;
+		LineParax.push_back(1);LineParay.push_back(0);LineParaz.push_back(-sumX / num_liers);
+                //LinePara.block(num_line, 0, 1, 3) = ;
+		//cout<<"LinePara.block "<< LinePara.block(num_line, 0, 1, 3) <<endl;
+                num_line = num_line + 1;
+            } // line is vertical to X axis
+            else {
+                double a1 = (num_liers*sumXY - sumX*sumY) / (num_liers*sumX2 - sumX*sumX);
+                double a0 = sumY / num_liers - a1 * sumX / num_liers;
+                //Eigen::MatrixXd LineParaRow;
+                //LineParaRow << a1, -1, a0;
+		LineParax.push_back(a1);LineParay.push_back(-1);LineParaz.push_back(a0);
+                //LinePara.block(num_line, 0, 1, 3) = LineParaRow;
+                //cout<<"LinePara.block "<< LinePara.block(num_line, 0, 1, 3) <<endl;
+                num_line = num_line + 1;
+            } // line parameters stored in LinePara
+        
+            // next delete all inliers from the newLaserXY
+            int flag = 1;
+            int count_inliers = 0;
+            //Eigen::MatrixXd newLaserXY1;
+	    vector<double> newLaserXY1x,newLaserXY1y;
+            num_left = newLaserXY.rows();
+	    cout<<"inner inner for start"<<endl;
+            for (int m = 0; m < num_left;m++) {
+                for (int mm = 0; mm < Inliers.rows(); mm++) {
+                    if (newLaserXY(m,0) == Inliers(mm,0) && newLaserXY(m,1) == Inliers(mm,1)) {
+			cout<<"INTO FLAG 0 "<<endl;
+                        flag = 0;
+                        break;
+                    }
+                }
+                if (flag == 1) {
+		//	cout<<"INTO FLAG 1 M IS "<<m<<newLaserXY.block(m, 0, 1, 2)<<endl;
+                    Eigen::MatrixXd newLaserXY1_row=newLaserXY.block(m, 0, 1, 2);
+			
+		    newLaserXY1x.push_back(newLaserXY1_row(0,0));newLaserXY1y.push_back(newLaserXY1_row(0,1));
+                    //newLaserXY1.block(count_inliers, 0, 1, 2) = newLaserXY1_row;          //
+                    count_inliers = count_inliers + 1; 
+		    
+                }
+            }
+	    cout<<"inner inner for end"<<endl;
+	    if(newLaserXY1x.size()<1){
+                num_left = 0;
+	    	continue;
+	    }
+            Eigen::VectorXd newLaserXY1x_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(newLaserXY1x.data(), newLaserXY1x.size());
+    
+    	    Eigen::VectorXd newLaserXY1y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(newLaserXY1y.data(), newLaserXY1y.size());
+    	    Eigen::MatrixXd newLaserXY1(newLaserXY1x_.rows(), 2);            
+	    newLaserXY1<<newLaserXY1x_,newLaserXY1y_;
+            newLaserXY = newLaserXY1;
+            num_left = newLaserXY.rows();
+     	    cout<<"inner inner assign val end"<<endl;
+        } // LSQ method to fit a line based on all those inliers found(Inliers)     
+
+    } // RANSAC LinePara
+    cout<<"num_line is "<<num_line<<endl;
+    cout<<"Ransac"<<endl;
+    // point landmark extraction
+    if(num_line<1){
+	x_hat_tpdt = x_hat_t;
+    	Sigma_x_tpdt = Sigma_x_t;
+	return;
+    }
+    cout<<"ASSIGN VAL AFTER RANSAC"<< LineParax.size()<<endl;
+    Eigen::VectorXd LineParax_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParax.data(), LineParax.size());
+    
+    Eigen::VectorXd LineParay_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParay.data(), LineParay.size());
+    
+    Eigen::VectorXd LineParaz_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LineParaz.data(), LineParaz.size());
+    Eigen::MatrixXd LinePara(LineParax_.rows(), 3);
+    LinePara<<LineParax_,LineParay_,LineParaz_;
+    
+    cout<<"ASSIGN VAL AFTER RANSAC FINISHED"<< LinePara<<endl;
+    
+    num_line = LinePara.rows();
+    Eigen::MatrixXd Landmark(num_line,2);
+    for (int pp = 0; pp < num_line;pp++) {
+        double a = LinePara(pp,0);
+        double b = LinePara(pp,1);
+        double c = LinePara(pp,2);
+        if (LinePara(pp,1) == 0) {
+            Landmark(pp,0) = LinePara(pp,1);
+            Landmark(pp,1) = 0;
+        }
+        else {
+            Landmark(pp,0) = (-a * c) / (a * a + b * b);
+            Landmark(pp,0) = (-b * c) / (a * b + b * b);
+        }
+    }
+
+    
+
+
+    double Mahalanobis_distance_Upthreshold = 5.9915, Mahalanobis_distance_Lowthreshold = 0.5;
+    int measure_count = 0;
+    for (int ii = 0; ii < Landmark.rows(); ii++) {
+
+        int measurementNumber = (x_hat_t.size() - 3) / 2;   // number of landmarks in the state
+
+        ////cout<< "Here is Sigma_ms length:\n" << Sigma_ms.size() << std::endl;
+        ////cout<< "Here is zs length:\n" << zs.size() << std::endl;
+
+        double L_x = Landmark(ii,0);
+        double L_y = Landmark(ii,1);
+        double R_x = x_hat_t[0];
+        double R_y = x_hat_t[1];
+        double R_the = x_hat_t[2];
+
+
+        std::pair<double, int> d_id(0, -1);
+        Eigen::MatrixXd S_best, K_best, H_best;
+        Eigen::VectorXd r_i_best;
+
+        Eigen::VectorXd z(2,1);     // landmark measurement
+        z[0] = sqrt((L_x - R_x) * (L_x - R_x) + (L_y - R_y) * (L_y - R_y));
+        z[1] = std::atan2(L_y - R_y, L_x - R_x) - R_the;
+
+        for (int i3 = 1; i3 <= measurementNumber; i3++) {
+            ////cout<< "Start check for measurement "<< i <<" in x_hat_t, total measurement is "<<measurementNumber<< std::endl;
+            
+            double Lxi = x_hat_t[3 + 2 * (i3 - 1)];
+            double Lyi = x_hat_t[4 + 2 * (i3 - 1)];
+            double r_hat = sqrt((Lxi - R_x)*(Lxi - R_x) + (Lyi - R_y)*(Lyi - R_y));
+            Eigen::VectorXd r_i;   // innovation 2 X 1
+            Eigen::MatrixXd HR(2, 3);
+            HR << (R_x - Lxi) / r_hat, (R_y - Lyi) / r_hat, 0,
+                (Lyi - R_y) / ((r_hat) * (r_hat)), (Lxi - R_x) / ((r_hat) * (r_hat)), -1;
+            Eigen::MatrixXd HLi(2, 2);
+            HLi << -(R_x - Lxi) / r_hat, -(R_y - Lyi) / r_hat,
+                -(Lyi - R_y) / ((r_hat) * (r_hat)), -(Lxi - R_x) / ((r_hat) * (r_hat));
+
+            Eigen::MatrixXd H;
+            H = Eigen::MatrixXd::Zero(2, 3 + 2 * measurementNumber);
+            H.block<2, 3>(0, 0) = HR;
+            H.block<2, 2>(0, 2 * i3 + 1) = HLi;
+
+            ////cout<< "Calculate H finished:\n" << H.size() << std::endl;
+            Eigen::MatrixXd S;
+            S = H * Sigma_x_t * H.transpose() + Sigma_ms;  // S = H * Sigma_x_t * H.transpose() + Sigma_ms[measure_count]
+            ////cout<< "Calculate S finished:\n" << S.size() << std::endl;
+            Eigen::VectorXd h_xLi0(2); // estimated measurement
+            h_xLi0[0] = sqrt((Lxi - R_x) * (Lxi - R_x) + (Lyi - R_y) * (Lyi - R_y));
+            h_xLi0[1] = std::atan2(Lyi - R_y, Lxi - R_x) - R_the;
+
+            r_i = z - h_xLi0; // innovation
+
+            Eigen::VectorXd dv = r_i.transpose() * S.inverse().eval() * r_i;
+            double d = dv[0];
+            ////cout<< "Current d is :\n" << d << std::endl;
+            if (d_id.second == -1 || d_id.first > d) {
+                d_id = std::make_pair(d, i3);
+
+                H_best = H;
+                S_best = S;
+                r_i_best = r_i;
+                ////cout<< "Set D_id:\n" << d_id.first<<" | "<< d_id.second << std::endl;
+            }
+            else {
+                //do nothing
+            }
+        }
+        if (d_id.second == -1 || d_id.first > Mahalanobis_distance_Upthreshold) {
+            //meet a new landmark
+            ////cout<< "Start inserting new landmark measure_count="<<measure_count << std::endl;
+            // L_x,L_y are new landmark coordinates;
+            
+            
+            
+
+            double r_hat = sqrt((L_x - R_x) * (L_x - R_x) + (L_y - R_y) * (L_y - R_y));
+            Eigen::MatrixXd HR(2, 3);
+            HR << (R_x - L_x) / r_hat, (R_y - L_y) / r_hat, 0,
+                (L_y - R_y) / ((r_hat) * (r_hat)), (L_x - R_x) / ((r_hat) * (r_hat)), -1;
+            Eigen::MatrixXd HLi(2, 2);
+            HLi << -(R_x - L_x) / r_hat, -(R_y - L_y) / r_hat,
+                -(L_y - R_y) / ((r_hat) * (r_hat)), -(L_x - R_x) / ((r_hat) * (r_hat));
+
+            //Eigen::VectorXd h_xLi0(2);
+            //h_xLi0[0] = std::cos(x_hat_t[2]) * (0 - x_hat_t[0]) + std::sin(x_hat_t[2]) * (0 - x_hat_t[1]);
+            //h_xLi0[1] = -std::sin(x_hat_t[2]) * (0 - x_hat_t[0]) + std::cos(x_hat_t[2]) * (0 - x_hat_t[1]);
+
+
+            // update state
+            Eigen::VectorXd new_val(2,1);
+            new_val << L_x,
+                L_y;
+            //update
+            //std:://cout<<"Update x_hat_t new_val is"<<new_val<<std::endl;
+
+            Eigen::VectorXd new_x_hat_t(x_hat_t.size() + 2);
+            new_x_hat_t << x_hat_t, 
+                new_val;
+            x_hat_t = new_x_hat_t;                                                  // dimension may not agree
+            
+            //std:://cout<<"Update x_hat_t finished"<<std::endl;
+            int rows_n, cols_n;
+            rows_n = Sigma_x_t.rows();
+            cols_n = Sigma_x_t.cols();
+            //std:://cout<<"row is:"<<rows_n<<" col is "<<cols_n<<std::endl;
+            //new right column
+            //std:://cout<<"new right column Start"<<std::endl;
+            Eigen::MatrixXd HR_T__HLkp1_neginvT;
+            HR_T__HLkp1_neginvT = HR.transpose() * HLi.transpose().inverse().eval();
+
+            Eigen::MatrixXd right_col;
+            right_col = -Sigma_x_t.block(0, 0, rows_n, 3) * HR_T__HLkp1_neginvT;
+            //std:://cout<<"new right column finished\n"<< right_col <<std::endl;
+            //new bottom row
+            Eigen::MatrixXd HLkp1_neginv__HR;
+            HLkp1_neginv__HR = HLi.inverse().eval() * HR;
+            Eigen::MatrixXd bot_row;
+            bot_row = -HLkp1_neginv__HR * Sigma_x_t.block(0, 0, 3, cols_n);
+            //std:://cout<<"new bot row finished\n"<< bot_row <<std::endl;
+
+            //bot right block
+            Eigen::MatrixXd last_block;
+            last_block = HLi.inverse().eval() * (HR * Sigma_x_t.block(0, 0, 3, 3) * HR.transpose() + Sigma_ms) * HLi.transpose().inverse().eval();
+            //std:://cout<<"new last block finished\n"<< last_block <<std::endl;
+
+            Eigen::MatrixXd new_Sigma(rows_n + 2, cols_n + 2);
+
+            //std:://cout<<"eql1\n"<<new_Sigma.block(0,0,rows_n,cols_n).size()<<std::endl;
+            new_Sigma.block(0, 0, rows_n, cols_n) = Sigma_x_t;
+            //std:://cout<<"eql2\n"<<new_Sigma.block(0,cols_n,rows_n,2).size()<<std::endl;
+            new_Sigma.block(0, cols_n, rows_n, 2) = right_col;
+            //std:://cout<<"eql3\n"<<new_Sigma.block(rows_n,0,2,cols_n).size()<<std::endl;
+            new_Sigma.block(rows_n, 0, 2, cols_n) = bot_row;
+            //std:://cout<<"eql4\n"<<new_Sigma.block(rows_n,cols_n,2,2).size()<<std::endl;
+            new_Sigma.block(rows_n, cols_n, 2, 2) = last_block;
+
+            Sigma_x_t = new_Sigma;
+
+            ////cout<< "inserting new landmark measure_count="<<measure_count<<" finished"<< std::endl;
+        }
+        else if (d_id.first < Mahalanobis_distance_Lowthreshold) {
+            //already met this landmark before
+            ////cout<< "Start updating existed landmark measure_count="<< measure_count << std::endl;
+            ////cout<< "Sigma_x_t:["<< Sigma_x_t.rows()<<" "<<Sigma_x_t.cols()<<"]" << std::endl;
+            ////cout<< "H_best:["<< H_best.rows()<<" "<<H_best.cols()<<"]" << std::endl;
+            ////cout<< "S_best:["<< S_best.rows()<<" "<<S_best.cols()<<"]" << std::endl;
+
+            K_best = Sigma_x_t * H_best.transpose() * S_best.inverse().eval();
+
+            Eigen::MatrixXd I_KH;
+            I_KH = K_best * H_best;
+            I_KH = Eigen::MatrixXd::Identity(I_KH.rows(), I_KH.cols()) - I_KH;
+            ////cout<< "Here is the matrix K:\n" << K << std::endl;
+            // Note that these we passed by reference, so to return, just set them
+            ////cout<< "Start updating x_hat_t" << std::endl;
+            x_hat_t = x_hat_t + K_best * r_i_best;
+            ////cout<< "Here is the matrix x_hat_tpdt:\n" << x_hat_tpdt << std::endl;
+            ////cout<< "Start updating Sigma_x_t" << std::endl;
+            Sigma_x_t = I_KH * Sigma_x_t * I_KH.transpose() + K_best * Sigma_ms * K_best.transpose();
+            ////cout<< "Existed landmark updated measure_count="<<measure_count<< std::endl;
+        }
+
+
+
+        measure_count = measure_count + 1;
+    }
+    // For each measurement, check if it matches any already in the state, and run an update for it.
+
+    // For every unmatched measurement make sure it's sufficiently novel, then add to the state.
+
+    // Note that these we passed by reference, so to return, just set them
+    x_hat_tpdt = x_hat_t;
+    Sigma_x_tpdt = Sigma_x_t;
+	//cout<<"finished"<<endl;
+}
+
+
+
 void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_t, Eigen::Matrix2d Sigma_m_,
                          Eigen::VectorXd& x_hat_tpdt, Eigen::MatrixXd& Sigma_x_tpdt) {
     // TODO
  	
     std::vector<Eigen::VectorXd> zs;
     std::vector<Eigen::MatrixXd> Sigma_ms;
+
     int len = integrated_msg.pcloud.points.size();
 	cout<<"len is"<<len<<endl;
 	
@@ -128,6 +573,7 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
         float x = integrated_msg.pcloud.points[i].x;  // X coordinates in global frame
         float y = integrated_msg.pcloud.points[i].y;  // Y coordinates in global frame
 	cout<<"cloud is "<<x<<"  "<<y<<endl;
+
         Eigen::VectorXd z = Eigen::Vector2d(x,y);
 	zs.push_back(z);
         Sigma_ms.push_back(Sigma_m_);
@@ -137,7 +583,9 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
     cout<<"finish creating zs and sigmams"<<endl;
 
 
+
     double Mahalanobis_distance_Upthreshold = 5.9915,Mahalanobis_distance_Lowthreshold=0.5;
+
     int measure_count = 0;
     for(int idx = 0;idx<zs.size();idx++){
         Eigen::VectorXd z = zs[idx];
