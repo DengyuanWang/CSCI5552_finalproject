@@ -14,7 +14,7 @@ class SLAM{
         Eigen::MatrixXd Sigma_x_t_glob;
         Eigen::MatrixXd Sigma_x_tpdt_glob;
         bool enable_manual_input;
-        
+        int count;
 
   public: 
 	void init_SLAM();
@@ -38,11 +38,12 @@ void SLAM::init_SLAM(){
         Sigma_x_t_glob = 0.05*0.05 * Eigen::Matrix3d::Identity();
         //Sigma_x_tpdt_glob;
 	enable_manual_input = false;
+	count = 0;
 }
 
 
 void SLAM::do_SLAM(){
-	
+	count = (count+1)%3;
 
 	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
 	//cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
@@ -54,13 +55,14 @@ void SLAM::do_SLAM(){
      	x_hat_t_glob= x_hat_tpdt_glob;
      	Sigma_x_t_glob = Sigma_x_tpdt_glob;
 	//cout<<"RelPose UPDATE start"<<endl;
+	if(count==0){
+	     	EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
 
-     	EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+		//EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
 
-	//EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
-
-	x_hat_t_glob = x_hat_tpdt_glob;
-	Sigma_x_t_glob = Sigma_x_tpdt_glob;
+		x_hat_t_glob = x_hat_tpdt_glob;
+		Sigma_x_t_glob = Sigma_x_tpdt_glob;
+	}
 	//cout<<"RelPose UPDATE end"<<endl;
 };
 

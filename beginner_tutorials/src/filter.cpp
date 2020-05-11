@@ -33,27 +33,46 @@ public:
   {
     laser_notifier_.registerCallback(
       boost::bind(&LaserScanToPointCloud::scanCallback, this, _1));
-    laser_notifier_.setTolerance(ros::Duration(0.01));
-    scan_pub_ = n_.advertise<sensor_msgs::PointCloud>("/my_cloud",1);
+    laser_notifier_.setTolerance(ros::Duration(1));
+    scan_pub_ = n_.advertise<sensor_msgs::PointCloud>("/my_cloud",10);
   }
 
   void scanCallback (const sensor_msgs::LaserScan::ConstPtr& scan_in)
   {
+/*
+    bool tag = true;
     sensor_msgs::PointCloud cloud;
-    try
-    {
-        projector_.transformLaserScanToPointCloud(
-          "world",*scan_in, cloud,listener_);
-    }
-    catch (tf::TransformException& e)
-    {
-        std::cout << e.what();
-        return;
-    }
+
+   	tag = false;
+	try
+	{
+	projector_.transformLaserScanToPointCloud(
+	  "world",*scan_in, cloud,listener_);
+	}
+	catch (tf::TransformException& e)
+	{
+	std::cout << e.what();
+	tag = true;
+	}
+  
+
     
     // Do something with cloud.
 
     scan_pub_.publish(cloud);
+*/
+if(!listener_.waitForTransform(
+        scan_in->header.frame_id,
+        "/world",
+        scan_in->header.stamp + ros::Duration().fromSec(scan_in->ranges.size()*scan_in->time_increment),
+        ros::Duration(1.0))){
+     return;
+  }
 
+  sensor_msgs::PointCloud cloud;
+  projector_.transformLaserScanToPointCloud("/world",*scan_in,
+          cloud,listener_);
+  scan_pub_.publish(cloud);
+  // Do something with cloud.
   }
 };
