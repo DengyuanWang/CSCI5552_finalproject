@@ -55,9 +55,9 @@ void SLAM::do_SLAM(){
      	Sigma_x_t_glob = Sigma_x_tpdt_glob;
 	//cout<<"RelPose UPDATE start"<<endl;
 
-     	//EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+     	EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
 
-	EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+	//EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
 
 	x_hat_t_glob = x_hat_tpdt_glob;
 	Sigma_x_t_glob = Sigma_x_tpdt_glob;
@@ -133,6 +133,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     //integrated_msg.layserScan.range[i] = nan/  0.011
     //ag = integrated_msg.layserScan.angle_min
     //ag += integrated_msg.layserScan.angle_increment
+/*
     int len = integrated_msg.layserScan.ranges.size();
     if(len==0){
         x_hat_tpdt = x_hat_t;
@@ -201,7 +202,20 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         LaserXY(i,1) = YR + std::sin(TheR) * LaserXY(i,0) + std::cos(TheR) * LaserXY(i,1);;  // Y coordinates in global frame
         cout<<"Laser measurement: "<<LaserXY(i,0)<<"   "<<LaserXY(i,1)<<endl;
     }
-
+*/
+	int len = integrated_msg.pcloud.points.size();
+        int num_meas = len;
+	if(len<1){
+	x_hat_tpdt = x_hat_t;
+		Sigma_x_tpdt = Sigma_x_t;
+		return;
+	}
+	Eigen::MatrixXd LaserXY(len,2);
+	for (int i = 0; i < len; i++){
+		LaserXY(i,0) = integrated_msg.pcloud.points[i].x;
+		LaserXY(i,1) = integrated_msg.pcloud.points[i].y;
+	}
+    // LaserXY is a len X 2 matrix containing all the laserscan measurements
     //assign value into LaserXY here:
     if (enable_manual_input){
 	    Eigen::MatrixXd LaserXY_(303,2);
@@ -231,7 +245,8 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     double InlrRation = 0.5; // inlier ration
     int InlrThr = 50; //int(InlrRation*num_meas);  // inlire threshold, if NumInlr > threshold, a line detected 
     double DisThr = 0.02;  // distance threshold, if distance < DisThr, inlier detected
-
+    
+    
     int num_left = num_meas;  // number of points left in the set of measurements
     Eigen::MatrixXd newLaserXY = LaserXY; // measurement sets after removing the inliers on a line
     srand(time(0));
@@ -277,7 +292,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
 	//cout<<"inner for start"<<endl;
         for (int j = 0; j < num_left; j++) {
 	    //cout<<"newLaserXY is "<<newLaserXY.rows()<<endl;
-            dis = (newLaserXY(j,0) - P1[0] )* normP[0] + (newLaserXY(j,1) - P1[1] )* normP[1];
+            dis = (newLaserXY(j,0) - P1[0] )* normP[0] + (newLaserXY(j,1) - P1[1] )* normP[1]; 
             dis = abs(dis);
             if (dis < DisThr) {  
 		//cout<<"distance is "<<dis<<" j is "<<j<<endl;       
@@ -393,9 +408,12 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     
     //cout<<"ASSIGN VAL AFTER RANSAC FINISHED"<< LinePara<<endl;
     
+
+    // compute landmark here; using LaserXY, the raw measurement;
     num_line = LinePara.rows();
-    cout << "the number of detected line is: " << num_line << endl;
-    Eigen::MatrixXd Landmark(num_line,2);
+    // cout << "the number of detected line is: " << num_line << endl;
+    //Eigen::MatrixXd Landmark(num_line,2);
+    vector<double> LandmarkX,LandmarkY;
     for (int pp = 0; pp < num_line;pp++) {
         double a = LinePara(pp,0);
         double b = LinePara(pp,1);
@@ -403,21 +421,38 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
         //cout<<"a is"<<a<<endl;
         //cout<<"b is"<<b<<endl;
         //cout<<"c is"<<c<<endl;
-        if (LinePara(pp,1) == 0) {
-            Landmark(pp,0) = -LinePara(pp,2); //Landmark(pp,0) = LinePara(pp,1);
-            Landmark(pp,1) = x_hat_t[1];
-            //cout<<"X coordinate in Landmark is"<<Landmark(pp,0)<<endl;
-            //cout<<"Y coordinate in Landmark is"<<Landmark(pp,1)<<endl;
-        }
-        else {
-            Landmark(pp,0) = (-a * c - (a * x_hat_t[1] - b * x_hat_t[0]) * b) / (a * a + b * b);
-            Landmark(pp,1) = (-c - a * Landmark(pp,0)) / b; //(-b * c) / (a * b + b * b);
-            //cout<<"X coordinate in Landmark is"<<Landmark(pp,0)<<endl;
-            //cout<<"Y coordinate in Landmark is"<<Landmark(pp,1)<<endl;
-        }
-    }
+        for (int tt = 0; tt < LaserXY.rows(); tt++){
+             double x_pc = LaserXY(tt,0); 
+             double y_pc = LaserXY(tt,1);
+             if (b == 0){  // perpendicular line
+                double distance = abs(x_pc + c/a);
+                if (distance < 0.06){ //identify x_pc,y_pc as inliers
+                   LandmarkX.push_back(x_pc);LandmarkY.push_back(y_pc);
+                }
 
+             }
+
+             else{ // not perpendicular line
+                double distance = abs(a*x_pc + b*y_pc + c)/sqrt(a*a + b*b);
+                if (distance < 0.06){ //identify x_pc,y_pc as inliers
+                   LandmarkX.push_back(x_pc);LandmarkY.push_back(y_pc);
+                }
+             }
+         }
+
+     }
+     Eigen::VectorXd Landmark_X = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LandmarkX.data(), LandmarkX.size());
     
+     Eigen::VectorXd Landmark_Y = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(LandmarkY.data(), LandmarkY.size()); 
+     Eigen::MatrixXd Landmark(Landmark_X.rows(), 2);
+     Landmark<<Landmark_X,Landmark_Y;
+     
+    
+
+
+
+
+
 
 
     double Mahalanobis_distance_Upthreshold = 5.9915 * 5.9915, Mahalanobis_distance_Lowthreshold = 0.10 * 0.10;

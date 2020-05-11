@@ -214,7 +214,7 @@ class ROSinterface{
 
 				//gen_points();
 
-				pub_cmd.publish(msg);
+				//pub_cmd.publish(msg);
 			}
 			
 
