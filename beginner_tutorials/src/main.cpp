@@ -81,7 +81,7 @@ class ROSinterface{
 		sub_pcloud = node_handle.subscribe("my_cloud", 10 , &ROSinterface::PointCloudCallback,this);
 
 		//visualization for debug
-		marker_pub = node_handle.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+		marker_pub = node_handle.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 
 		br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "odom"));
 
@@ -138,7 +138,7 @@ class ROSinterface{
 		return true;
 	}
 
-	bool gen_points(){
+	bool gen_points(Eigen::VectorXd x_hat_t){
 		visualization_msgs::Marker points;
 		points.header.frame_id = "/world";
 		points.header.stamp = ros::Time::now();
@@ -149,11 +149,21 @@ class ROSinterface{
 		points.type = visualization_msgs::Marker::POINTS;
 		points.scale.x = 0.2;points.scale.y = 0.2;
 		points.color.b = 1.0f;points.color.a = 1.0;
-		//points.points = integrated_msg.pcloud.points;
-		
-
-
-		// marker_pub.publish(points);
+		//= integrated_msg.pcloud.points;
+		for(int i=0;i<(x_hat_t.size()-3)/2.0;i++){
+			geometry_msgs::Point p;
+			float x =x_hat_t[3+2*i],
+				y =x_hat_t[3+2*i+1];
+			p.x = x;p.y=y;p.z=0;
+			points.points.push_back(p);
+		}
+		br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "odom"));
+		if (marker_pub.getNumSubscribers() < 1){
+			ROS_WARN_ONCE("Please create a subscriber to the marker");
+			return false;
+		}
+		marker_pub.publish(points);
+		return true;
 	}
 
 	bool show_marker(){
@@ -171,7 +181,7 @@ class ROSinterface{
 	}
 	bool start_ros_loop(bool debug_tag){
 		//Sets the loop to publish at a rate of 10Hz
-	     	ros::Rate rate(100);
+	     	ros::Rate rate(70);
 		integrated_msg.time_stamp = ros::Time::now();
 		while(ros::ok()) {
 		    	
@@ -183,13 +193,9 @@ class ROSinterface{
 				slam_handle.do_SLAM();
 
 				cout<<"landmark size is"<<(slam_handle.x_hat_t_glob.size()-3)/2.0<<endl;
-				for(int i=0;i<(slam_handle.x_hat_t_glob.size()-3)/2.0;i++){
-
-					float x = slam_handle.x_hat_t_glob[3+2*i],
-						y = slam_handle.x_hat_t_glob[3+2*i+1];
-
-					gen_marker(x,y,i);
-				}
+				if(slam_handle.count%5==0)
+					gen_points(slam_handle.x_hat_t_glob);
+				
 				//Declares the message to be sent
 				geometry_msgs::Twist msg = planner_handle.do_planning();
 				if(planner_handle.is_finished())
@@ -206,6 +212,9 @@ class ROSinterface{
 					msg.angular.y=0;
 					msg.angular.z=0.2;
 					//Publish the message
+					msg.linear.x=1*double(rand())/double(RAND_MAX)-0.5;
+					//Random y value between -3 and 3
+					msg.angular.z=2*double(rand())/double(RAND_MAX)-1;
 				}
 				else{
 				

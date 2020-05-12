@@ -13,7 +13,7 @@ class SLAM{
         Eigen::VectorXd x_hat_tpdt_glob;
         Eigen::MatrixXd Sigma_x_t_glob;
         Eigen::MatrixXd Sigma_x_tpdt_glob;
-        
+        int count;
         
 
   public: 
@@ -37,11 +37,12 @@ void SLAM::init_SLAM(){
         //x_hat_tpdt_glob = x_T;
         Sigma_x_t_glob = 0.05*0.05 * Eigen::Matrix3d::Identity();
         //Sigma_x_tpdt_glob;
+	count = 0;
 }
 
 
 void SLAM::do_SLAM(){
-	
+	count = (count+1)%10;
 
 	float a = integrated_msg.u_v,b = integrated_msg.u_w,dt = integrated_msg.delta_t;
 	//cout<<"do slam start"<<"a is "<<a<<"b is"<<b<<"delta t is "<<dt<<endl;
@@ -55,10 +56,13 @@ void SLAM::do_SLAM(){
 	//cout<<"RelPose UPDATE start"<<endl;
 
      	//EKFSLAMRelPosUpdate(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
-
-	EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob, x_hat_tpdt_glob, Sigma_x_tpdt_glob);
-	x_hat_t_glob = x_hat_tpdt_glob;
-	Sigma_x_t_glob = Sigma_x_tpdt_glob;
+	if(count==0){
+		EKFSLAMRelPosUpdate2(x_hat_t_glob, Sigma_x_t_glob, Sigma_ms_glob,
+				 x_hat_tpdt_glob, Sigma_x_tpdt_glob);
+		x_hat_t_glob = x_hat_tpdt_glob;
+		Sigma_x_t_glob = Sigma_x_tpdt_glob;
+	}
+	
 	//cout<<"RelPose UPDATE end"<<endl;
 };
 
@@ -572,7 +576,7 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
     for (int i = 0; i < integrated_msg.pcloud.points.size(); i++) {
         float x = integrated_msg.pcloud.points[i].x;  // X coordinates in global frame
         float y = integrated_msg.pcloud.points[i].y;  // Y coordinates in global frame
-	cout<<"cloud is "<<x<<"  "<<y<<endl;
+	//cout<<"cloud is "<<x<<"  "<<y<<endl;
 
         Eigen::VectorXd z = Eigen::Vector2d(x,y);
 	zs.push_back(z);
@@ -599,7 +603,7 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
         Eigen::VectorXd r_i_best;
         for(int i=1;i<=measurementNumber;i++){
             //std::cout << "Start check for measurement "<< i <<" in x_hat_t, total measurement is "<<measurementNumber<< std::endl;
-            
+            //if(sqrt(pow()+pow())>1)
             Eigen::VectorXd r_i;
             Eigen::MatrixXd HR(2,3);
             HR << -std::cos(x_hat_t[2]), -std::sin(x_hat_t[2]), -std::sin(x_hat_t[2])*(x_hat_t[2*i+1]-x_hat_t[0])
