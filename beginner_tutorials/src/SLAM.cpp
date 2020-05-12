@@ -1,5 +1,6 @@
 #include "header.h"
-
+#include <unordered_map>
+#include <unordered_set>
 #include "filter.cpp"
 
 using namespace std;
@@ -135,76 +136,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     //integrated_msg.layserScan.range[i] = nan/  0.011
     //ag = integrated_msg.layserScan.angle_min
     //ag += integrated_msg.layserScan.angle_increment
-/*
-    int len = integrated_msg.layserScan.ranges.size();
-    if(len==0){
-        x_hat_tpdt = x_hat_t;
-        Sigma_x_tpdt = Sigma_x_t;
-        return;
-    }
-    //cout<<"scan len is "<<len<<endl;
-//human defined layserscan
-//angle_min,max
-//(r_x-0.5,r_y+1)-----(r_x+0.5,r_y+1)
-//0.05,
-    double Bearing = integrated_msg.layserScan.angle_min;
-    double Del_B = integrated_msg.layserScan.angle_increment;
 
-    vector<double> val_vec,bearing_vec;
-    int countValid = 0;
-    for (int i_l = 0; i_l < len; i_l++) {
-        if (isnan(integrated_msg.layserScan.ranges[i_l])) {
-	    ////cout<<"find nan "<<integrated_msg.layserScan.ranges[i_l]<<"idx is "<<i_l<<endl;
-            // do nothing
-        }
-        else {
-	    
-	    float val = integrated_msg.layserScan.ranges[i_l];
-	    //cout<<"find not nan "<< val<<endl;
-	    val_vec.push_back(val);
-	    bearing_vec.push_back(Bearing);
-            //LaserRB(countValid,0) = val;
-            //LaserRB(countValid,1) = Bearing;
-            countValid = countValid + 1;
-        }
-        Bearing = Bearing + Del_B;
-     }
-    if(val_vec.size()<1){
-	x_hat_tpdt = x_hat_t;
-        Sigma_x_tpdt = Sigma_x_t;
-        return;
-    }
-    Eigen::VectorXd vals = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
-    Eigen::VectorXd bearings = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(val_vec.data(), val_vec.size());
-    Eigen::MatrixXd LaserRB(vals.rows(), vals.cols()+bearings.cols());
-    LaserRB<<vals,bearings;
-    //cout<< "layserscan date convertion" << std::endl;
-
-    int num_meas = LaserRB.rows();  // number of points in one set of Laser measurement
-    //cout<<"num"<<num_meas<<endl;
-    vector<double> X_tmp,Y_tmp;
-    
-    for (int i = 0; i < num_meas; i++) {
-	X_tmp.push_back(-LaserRB(i,0) * std::sin(LaserRB(i,1)));// X coordinates in robot frame
-	Y_tmp.push_back(LaserRB(i,0) * std::cos(LaserRB(i,1))); // Y coordinates in robot frame
-        
-     }
-    Eigen::VectorXd X_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(X_tmp.data(), X_tmp.size());
-    Eigen::VectorXd Y_ = Eigen::Map<Eigen::VectorXd, Eigen::Unaligned>(Y_tmp.data(), Y_tmp.size());
-    Eigen::MatrixXd LaserXY(X_.rows(), X_.cols()+Y_.cols());
-    LaserXY<<X_,Y_;
-
-    //convert LaserXY to global frame
-    double XR = x_hat_t[0];
-    double YR = x_hat_t[1];
-    double TheR = x_hat_t[2];
-    //cout << "robot bearing is "<<TheR<<endl;
-    for (int i = 0; i < num_meas; i++) {
-        LaserXY(i,0) = XR + std::cos(TheR) * LaserXY(i,0) - std::sin(TheR) * LaserXY(i,1);  // X coordinates in global frame
-        LaserXY(i,1) = YR + std::sin(TheR) * LaserXY(i,0) + std::cos(TheR) * LaserXY(i,1);;  // Y coordinates in global frame
-        cout<<"Laser measurement: "<<LaserXY(i,0)<<"   "<<LaserXY(i,1)<<endl;
-    }
-*/
 	int len = integrated_msg.pcloud.points.size();
         int num_meas = len;
 	if(len<1){
@@ -290,6 +222,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             -P12[0]);
         int count = 0;
         //Eigen::MatrixXd Inliers;
+	unordered_set<int> used_idx;
 	vector<double> in_x,in_y;
 	//cout<<"inner for start"<<endl;
         for (int j = 0; j < num_left; j++) {
@@ -298,13 +231,15 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             dis = abs(dis);
             if (dis < DisThr) {  
 		//cout<<"distance is "<<dis<<" j is "<<j<<endl;       
-		//cout<<"here"<<newLaserXY.block(j,0,1,2)<<endl;       
+		//cout<<"here"<<newLaserXY.block(j,0,1,2)<<endl; 
+	        used_idx.insert(j);      
                 Eigen::MatrixXd Inliers_row = newLaserXY.block(j,0,1,2);
 		//cout<<"Inliers_row is "<<Inliers_row<<endl;
                 in_x.push_back(Inliers_row(0,0));
 		in_y.push_back(Inliers_row(0,1));
                 //Inliers.block(count,0,1,2) = Inliers_row;
                 count = count + 1;
+		
             }
         } // find all the points lying near the line
 	//cout<<"inner for finished"<<"count is "<<count<<endl;
@@ -321,12 +256,22 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             double sumXY = 0.0;
             double sumX2 = 0.0;
             int num_liers = Inliers.rows();
+		Eigen::MatrixXd col1 = Inliers.block(0,0,Inliers.rows(),1);
+		Eigen::MatrixXd col2 = Inliers.block(0,1,Inliers.rows(),1);
+	    Eigen::VectorXd sum_xy = Inliers.colwise().sum();
+	    sumX = sum_xy[0];sumY = sum_xy[1];
+            Eigen::MatrixXd sum_XYm = (col1.cwiseProduct(col2)).rowwise().sum();
+		sumXY=sum_XYm(0,0);
+	    Eigen::MatrixXd sum_XXm = (col1.cwiseProduct(col1)).rowwise().sum();
+	    	sumX2 = sum_XXm(0,0);
+	/*
             for (int k = 0; k < Inliers.rows();k++) {
                 sumX = sumX + Inliers(k,0);
                 sumY = sumY + Inliers(k,1);
                 sumXY = sumXY + Inliers(k,0) * Inliers(k,1);
                 sumX2 = sumX2 + Inliers(k,0) * Inliers(k,0);                
             }
+*/
             //cout<<"n times X squared"<<num_liers*sumX2<<endl;
             //cout<<"sum X times sum X"<<sumX*sumX<<endl;
             if (abs(num_liers*sumX2 - sumX*sumX) < 0.01) {
@@ -355,16 +300,9 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
 	    vector<double> newLaserXY1x,newLaserXY1y;
             num_left = newLaserXY.rows();
 	    //cout<<"inner inner for start"<<endl;
-            for (int m = 0; m < num_left;m++) {
+            for (int m = 0; m < num_left;m++) { // pts in measurement;
                 int flag = 1;
-                for (int mm = 0; mm < Inliers.rows(); mm++) {
-                    if (newLaserXY(m,0) == Inliers(mm,0) && newLaserXY(m,1) == Inliers(mm,1)) {
-			//cout<<"INTO FLAG 0 "<<endl;
-                        flag = 0;
-                        break;
-                    }
-                }
-                if (flag == 1) {
+		if(used_idx.find(m)==used_idx.end()){
 		//	cout<<"INTO FLAG 1 M IS "<<m<<newLaserXY.block(m, 0, 1, 2)<<endl;
                     Eigen::MatrixXd newLaserXY1_row=newLaserXY.block(m, 0, 1, 2);
 			
@@ -372,7 +310,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
                     //newLaserXY1.block(count_inliers, 0, 1, 2) = newLaserXY1_row;          //
                     count_inliers = count_inliers + 1; 
 		    
-                }
+		}
             }
 	    //cout<<"inner inner for end"<<endl;
 	    if(newLaserXY1x.size()<1){
@@ -719,7 +657,8 @@ void SLAM::EKFSLAMRelPosUpdate2(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x
             
             r_i = z - h_xLi0;
             
-            Eigen::VectorXd dv = r_i.transpose()*S.inverse().eval()*r_i;
+            //Eigen::VectorXd dv = r_i.transpose()*S.inverse().eval()*r_i;
+		Eigen::VectorXd dv = r_i.transpose()*r_i;
             double d = dv[0];
             //std::cout << "Current d is :\n" << d << std::endl;
             if(d_id.second==-1||d_id.first>d){
