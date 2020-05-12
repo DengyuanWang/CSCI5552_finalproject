@@ -75,10 +75,10 @@ class ROSinterface{
 
 		pub_cmd = node_handle.advertise<geometry_msgs::Twist>("/cmd_vel_mux/input/teleop", 10);
 		//10 is the queue size
-		sub_odom = node_handle.subscribe("odom", 10 , &ROSinterface::OdomCallback,this);
-		sub_laserscan = node_handle.subscribe("scan", 10 , &ROSinterface::LaserScanCallback,this);
+		sub_odom = node_handle.subscribe("odom", 100 , &ROSinterface::OdomCallback,this);
+		sub_laserscan = node_handle.subscribe("scan", 100 , &ROSinterface::LaserScanCallback,this);
 
-		sub_pcloud = node_handle.subscribe("my_cloud", 10 , &ROSinterface::PointCloudCallback,this);
+		sub_pcloud = node_handle.subscribe("my_cloud", 100 , &ROSinterface::PointCloudCallback,this);
 
 		//visualization for debug
 		marker_pub = node_handle.advertise<visualization_msgs::Marker>("visualization_marker", 10);
@@ -138,7 +138,9 @@ class ROSinterface{
 		return true;
 	}
 
+
 	bool gen_points(Eigen::VectorXd x_hat_t){
+
 		visualization_msgs::Marker points;
 		points.header.frame_id = "/world";
 		points.header.stamp = ros::Time::now();
@@ -149,6 +151,7 @@ class ROSinterface{
 		points.type = visualization_msgs::Marker::POINTS;
 		points.scale.x = 0.2;points.scale.y = 0.2;
 		points.color.b = 1.0f;points.color.a = 1.0;
+
 		//= integrated_msg.pcloud.points;
 		for(int i=0;i<(x_hat_t.size()-3)/2.0;i++){
 			geometry_msgs::Point p;
@@ -164,6 +167,7 @@ class ROSinterface{
 		}
 		marker_pub.publish(points);
 		return true;
+
 	}
 
 	bool show_marker(){
@@ -193,9 +197,10 @@ class ROSinterface{
 				slam_handle.do_SLAM();
 
 				cout<<"landmark size is"<<(slam_handle.x_hat_t_glob.size()-3)/2.0<<endl;
-				if(slam_handle.count%5==0)
+
+				if(slam_handle.count==0)
 					gen_points(slam_handle.x_hat_t_glob);
-				
+
 				//Declares the message to be sent
 				geometry_msgs::Twist msg = planner_handle.do_planning();
 				if(planner_handle.is_finished())
@@ -223,7 +228,7 @@ class ROSinterface{
 
 				//gen_points();
 
-				pub_cmd.publish(msg);
+				//pub_cmd.publish(msg);
 			}
 			
 
