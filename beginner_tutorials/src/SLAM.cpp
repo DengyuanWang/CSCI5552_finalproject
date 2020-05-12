@@ -140,11 +140,11 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
     //integrated_msg.layserScan.range[i] = nan/  0.011
     //ag = integrated_msg.layserScan.angle_min
     //ag += integrated_msg.layserScan.angle_increment
-
+	
 	int len = integrated_msg.pcloud.points.size();
         int num_meas = len;
 	if(len<1){
-	x_hat_tpdt = x_hat_t;
+		x_hat_tpdt = x_hat_t;
 		Sigma_x_tpdt = Sigma_x_t;
 		return;
 	}
@@ -431,6 +431,7 @@ void SLAM::EKFSLAMRelPosUpdate(Eigen::VectorXd x_hat_t, Eigen::MatrixXd Sigma_x_
             double Lxi = x_hat_t[3 + 2 * (i3 - 1)];
             double Lyi = x_hat_t[4 + 2 * (i3 - 1)];
             double r_hat = sqrt((Lxi - R_x)*(Lxi - R_x) + (Lyi - R_y)*(Lyi - R_y));
+
             Eigen::VectorXd r_i;   // innovation 2 X 1
             Eigen::MatrixXd HR(2, 3);
             HR << -std::cos(R_the), -std::sin(R_the),-std::sin(R_the)*(Lxi - R_x) + std::cos(R_the)*(Lyi - R_y),

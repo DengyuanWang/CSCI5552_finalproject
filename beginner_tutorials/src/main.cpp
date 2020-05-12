@@ -47,6 +47,7 @@ class ROSinterface{
 			//ROS_INFO("--scan write--");
 			integrated_msg.layserScan = *msg;
 		}
+		br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "odom"));
 	} 
 
 	void PointCloudCallback(const sensor_msgs::PointCloud::ConstPtr& msg){
@@ -185,7 +186,7 @@ class ROSinterface{
 	}
 	bool start_ros_loop(bool debug_tag){
 		//Sets the loop to publish at a rate of 10Hz
-	     	ros::Rate rate(70);
+	     	ros::Rate rate(25);
 		integrated_msg.time_stamp = ros::Time::now();
 		while(ros::ok()) {
 		    	
